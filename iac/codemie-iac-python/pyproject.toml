@@ -8,7 +8,7 @@ packages = [{ include = "codemie_iac", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "^3.12"
-codemie-sdk-python = { path = "../../sdk/codemie-python", develop = true }
+codemie-sdk-python = "0.1.686"
 pydantic = "^2.12.2"
 pyyaml = "^6.0.2"
 jsonschema = "^4.23.0"
