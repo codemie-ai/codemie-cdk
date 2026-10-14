@@ -311,3 +311,15 @@ def test_cdk_release_candidate_tag_names_a_prerelease():
     for bad in ("cdk-v0.2.1-rc", "cdk-v0.2.1-beta1", "cdk-v0.2.1-rc01", "cdk-v0.2.1-rc1-x"):
         with pytest.raises(cv.VersionError):
             cv.version_from_tag("npm", bad, "0.2.0", prefix="cdk-v")
+
+
+def test_check_version_accepts_mcp_prefix():
+    assert cv.version_from_tag("pypi", "mcp-assistants-v0.2.1", "0.2.0", prefix="mcp-assistants-v") == "0.2.1"
+    assert cv.version_from_tag("pypi", "mcp-workflows-v0.2.1-rc1", "0.2.0", prefix="mcp-workflows-v") == "0.2.1-rc1"
+
+
+def test_check_version_rejects_other_package_prefix():
+    for tag in ("mcp-workflows-v0.2.1", "mcp-datasources-v0.2.1", "python-v0.2.1", "mcp-assistants-v0.3.0"):
+        with pytest.raises(cv.VersionError):
+            cv.version_from_tag("pypi", tag, "0.2.0", prefix="mcp-assistants-v")
+
