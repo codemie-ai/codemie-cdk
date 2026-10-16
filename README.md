@@ -21,6 +21,10 @@ npm install --save-dev @codemieai/cdk
 - `codemie-sdk` `>=0.1.0 <1.0.0` for `@codemieai/cdk` (installed as a dependency)
 - Python 3.12 or later (`codemie-iac-python`)
 
+## Related repositories
+
+- [codemie-mcp-servers](https://github.com/codemie-ai/codemie-mcp-servers): MCP servers that give AI tools access to CodeMie.
+
 ## Contributing
 
 Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md) first.
