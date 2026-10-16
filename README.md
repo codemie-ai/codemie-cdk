@@ -1,6 +1,21 @@
+<div align="center">
+
+<img src="assets/codemie-logo.svg" alt="CodeMie" width="96" />
+
 # CodeMie CDK
 
-Infrastructure as code for the CodeMie platform. Manage assistants, datasources and workflows with declarative YAML files.
+**Infrastructure as code for the CodeMie platform.**
+
+[![npm](https://img.shields.io/npm/v/@codemieai/cdk.svg?style=flat-square&label=npm)](https://www.npmjs.com/package/@codemieai/cdk)
+[![CI](https://img.shields.io/github/actions/workflow/status/codemie-ai/codemie-cdk/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/codemie-ai/codemie-cdk/actions/workflows/ci.yml)
+[![Node.js](https://img.shields.io/badge/node-22%2B-brightgreen.svg?style=flat-square)](#requirements)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?style=flat-square)](LICENSE)
+
+</div>
+
+## What is it
+
+Describe your [CodeMie](https://github.com/codemie-ai/codemie-code) assistants, datasources and workflows in declarative YAML files, keep them in Git, and deploy them to the platform from the command line or from CI.
 
 This repository holds two packages. Each one has its own README with usage and examples.
 
