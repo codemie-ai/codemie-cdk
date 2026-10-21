@@ -22,6 +22,8 @@ by comparing the document with the live datasource, before any write.
 from collections.abc import Mapping
 from typing import Any
 
+from codemie_sdk.models.assistant import AssistantCreateRequest, AssistantUpdateRequest
+
 from ..envelope import Document, DocumentKind
 from .errors import ApplyError
 
@@ -66,13 +68,35 @@ def _error(document: Document, error_type: str, reason: str) -> ApplyError:
     return ApplyError(error_type, document.meta.kind.value, document.meta.name, reason)
 
 
+def _sdk_carries_assistant_skills() -> bool:
+    """Whether the installed SDK's assistant requests have a ``skill_ids``
+    field. Older SDKs ignore unknown fields, so skills would be dropped."""
+    return all(
+        "skill_ids" in cls.model_fields
+        for cls in (AssistantCreateRequest, AssistantUpdateRequest)
+    )
+
+
 def guard_supported(document: Document) -> None:
-    """Raise ``ApplyError`` for a file datasource (no adapter is consulted)."""
+    """Raise ``ApplyError`` for a file datasource (no adapter is consulted), or
+    for an assistant with ``skill_ids`` when the installed SDK cannot send them."""
     if _is_datasource(document) and document.spec.type == _FILE_TYPE:
         raise _error(
             document,
             "unsupported_datasource_type",
             f"datasource type {_FILE_TYPE!r}: file datasources are not supported",
+        )
+    if (
+        document.meta.kind is DocumentKind.ASSISTANT
+        and document.spec.skill_ids
+        and not _sdk_carries_assistant_skills()
+    ):
+        raise _error(
+            document,
+            "unsupported_sdk",
+            "skill_ids: the installed codemie-sdk assistant request has no "
+            "skill_ids field, so the skills would be dropped silently; upgrade "
+            "codemie-sdk-python or remove skill_ids from the document",
         )
 
 

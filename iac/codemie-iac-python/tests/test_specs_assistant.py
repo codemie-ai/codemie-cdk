@@ -249,3 +249,31 @@ def test_hedging_config_is_carried():
         hedging_config=hedging,
     )
     assert AssistantSpec.from_entity(request).hedging_config == hedging
+
+
+def test_skill_ids_default_to_empty_and_validate():
+    base = {
+        "name": "a",
+        "description": "d",
+        "system_prompt": "p",
+        "llm_model_type": "gpt",
+    }
+    assert AssistantSpec.model_validate(base).skill_ids == []
+    spec = AssistantSpec.model_validate({**base, "skill_ids": ["s1", "s2"]})
+    assert spec.skill_ids == ["s1", "s2"]
+
+
+def test_skill_ids_round_trip_through_from_entity():
+    class _Request(AssistantCreateRequest):
+        skill_ids: list[str] = []
+        interactive_enabled: bool = False
+
+    request = _Request(
+        name="a",
+        description="d",
+        system_prompt="p",
+        project="proj",
+        llm_model_type="gpt",
+        skill_ids=["s1"],
+    )
+    assert AssistantSpec.from_entity(request).skill_ids == ["s1"]

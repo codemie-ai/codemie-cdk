@@ -448,6 +448,7 @@ class AssistantSpec(BaseModel):
     tools_tokens_size_limit: int | None = None
     mcp_servers: list[MCPServerDetailsSpec] = Field(default_factory=list)
     assistant_ids: list[str] = Field(default_factory=list)
+    skill_ids: list[str] = Field(default_factory=list)
     enabled_builtin_subagents: list[str] | None = None
     prompt_variables: list[PromptVariableSpec] = Field(default_factory=list)
     skip_integration_validation: bool | None = False
@@ -482,6 +483,7 @@ class AssistantSpec(BaseModel):
                 for s in request.mcp_servers
             ],
             assistant_ids=request.assistant_ids,
+            skill_ids=list(getattr(request, "skill_ids", None) or []),
             enabled_builtin_subagents=request.enabled_builtin_subagents,
             prompt_variables=[
                 PromptVariableSpec.from_entity(p) for p in request.prompt_variables

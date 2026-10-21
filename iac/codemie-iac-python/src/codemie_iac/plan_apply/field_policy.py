@@ -60,7 +60,7 @@ _ASSISTANT = _policy(
     comparable="name description icon_url system_prompt project llm_model_type "
     "toolkits conversation_starters shared is_react is_global slug temperature "
     "top_p tools_tokens_size_limit context mcp_servers assistant_ids "
-    "enabled_builtin_subagents prompt_variables categories tool_permissions "
+    "skill_ids enabled_builtin_subagents prompt_variables categories tool_permissions "
     "hedging_config interactive_enabled enable_image_generation "
     "file_attachment_enabled",
 )

@@ -35,6 +35,7 @@ apply: they turn a document's name references and credential refs into the
 
 import logging
 import traceback
+import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
@@ -54,12 +55,13 @@ from .errors import (
     ApplyError,
     FieldError,
     PlatformRejectionError,
+    UnresolvedReferenceError,
     scrub,
 )
 from .guards import guard_name, guard_project, guard_supported
 from .kinds import adapter_for, created_id
 from .lookup import EntityKey, NameLookup, Reference
-from .ordering import EDGE_EXTRACTORS, DependencyGraph
+from .ordering import EDGE_EXTRACTORS, DependencyGraph, value_edges
 
 _LOG = logging.getLogger(__name__)
 
@@ -119,6 +121,42 @@ class ResolveContext:
     def ids(self, kind: DocumentKind, names: Iterable[str]) -> list[str]:
         return [self.ref(kind, n).id for n in names]
 
+    def value_ids(
+        self, kind: DocumentKind, values: Iterable[str], owner: Document
+    ) -> list[str]:
+        """Platform ids for reference values that may be a name or a raw id.
+
+        Per value: a bundle name wins (even if id-shaped), then a live name in
+        the target project, then an id-shaped value passes through; anything
+        else (or an ambiguous name) is an ``UnresolvedReferenceError``.
+        """
+        return [self._value_id(kind, v, owner) for v in values]
+
+    def _value_id(self, kind: DocumentKind, value: str, owner: Document) -> str:
+        if self.lookup.in_bundle(kind, value) is not None:
+            return self.ref(kind, value).id
+        return self._live_or_raw(kind, value, owner)
+
+    def check_value(self, kind: DocumentKind, value: str, owner: Document) -> None:
+        """Preflight twin of ``value_ids``: raises exactly when it would."""
+        if self.lookup.in_bundle(kind, value) is None:
+            self._live_or_raw(kind, value, owner)
+
+    def _live_or_raw(self, kind: DocumentKind, value: str, owner: Document) -> str:
+        live = self.lookup.find_live(kind, value)
+        if live is not None:
+            return live.id
+        if _is_uuid(value):
+            return value
+        raise UnresolvedReferenceError(
+            "unresolved_reference",
+            kind.value,
+            value,
+            f"no {kind.value} named {value!r} in the bundle or in project "
+            f"{self.lookup.target!r}, and it is not a platform id "
+            f"(referenced by {_label(owner)})",
+        )
+
     def integration(self, name: str | None) -> dict | None:
         """An ``Integration`` payload (no secrets) carrying the platform id."""
         if not name:
@@ -142,6 +180,13 @@ class ResolveContext:
         except ValueError:
             return value
         return self.credentials.resolve(ref).reveal()
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        return str(uuid.UUID(value)) == value.lower()
+    except ValueError:
+        return False
 
 
 def _integration_payload(ref: Reference) -> dict:
@@ -188,6 +233,7 @@ def _assistant_resolved(document: Document, ctx: ResolveContext) -> dict:
     dumped = spec.model_dump(mode="python")
     return {
         "assistant_ids": ctx.ids(DocumentKind.ASSISTANT, spec.assistant_ids),
+        "skill_ids": ctx.value_ids(DocumentKind.SKILL, spec.skill_ids, document),
         "categories": ctx.ids(DocumentKind.CATEGORY, spec.categories),
         "toolkits": [_toolkit_body(t, ctx) for t in dumped["toolkits"]],
         "mcp_servers": [_mcp_body(s, ctx) for s in dumped["mcp_servers"]],
@@ -209,15 +255,23 @@ def _integration_resolved(document: Document, ctx: ResolveContext) -> dict:
     }
 
 
+def _agent_refs(agent: Any, ctx: ResolveContext, owner: Document) -> Any:
+    """``agent`` with its assistant, skill and datasource references as ids."""
+    update: dict[str, Any] = {}
+    if agent.assistant_id:
+        update["assistant_id"] = ctx.ref(DocumentKind.ASSISTANT, agent.assistant_id).id
+    if agent.skill_ids:
+        update["skill_ids"] = ctx.value_ids(DocumentKind.SKILL, agent.skill_ids, owner)
+    if agent.datasource_ids:
+        update["datasource_ids"] = ctx.value_ids(
+            DocumentKind.DATASOURCE, agent.datasource_ids, owner
+        )
+    return agent.model_copy(update=update) if update else agent
+
+
 def _workflow_assistants(document: Document, ctx: ResolveContext) -> dict:
     assistants = document.spec.workflow.assistants
-    resolved = {}
-    for key, assistant in assistants.items():
-        if assistant.assistant_id:
-            ref = ctx.ref(DocumentKind.ASSISTANT, assistant.assistant_id)
-            assistant = assistant.model_copy(update={"assistant_id": ref.id})
-        resolved[key] = assistant
-    return resolved
+    return {key: _agent_refs(agent, ctx, document) for key, agent in assistants.items()}
 
 
 def _yaml_error(document: Document) -> ApplyError:
@@ -344,8 +398,13 @@ def check_adapters(documents: list[Document], _ctx: ResolveContext) -> None:
 def check_references(documents: list[Document], ctx: ResolveContext) -> None:
     for document in documents:
         extractor = EDGE_EXTRACTORS.get(document.meta.kind)
-        for kind, name in extractor(document) if extractor else ():
-            ctx.lookup.require(kind, name, _label(document))
+        values = value_edges(document)
+        for edge in extractor(document) if extractor else ():
+            kind, name = edge
+            if edge in values:
+                ctx.check_value(kind, name, document)
+            else:
+                ctx.lookup.require(kind, name, _label(document))
 
 
 def check_credentials(documents: list[Document], ctx: ResolveContext) -> None:

@@ -387,6 +387,24 @@ server's `auth_token` becomes a `CredentialRef` keyed by that server's own
 name — the same narrowing shown in the Integration example, just applied
 automatically.
 
+`AssistantSpec.skill_ids` lists the skills attached to the assistant. Each
+entry is a reference resolved when the document is applied (see below), and
+an omitted field means no skills. The assistant request of the installed
+`codemie-sdk-python` must carry `skill_ids`; if it does not, applying an
+assistant that lists skills fails (`unsupported_sdk`) before anything is
+written, instead of creating the assistant without its skills.
+
+**Resolving skill and datasource references.** An assistant's `skill_ids` and
+a workflow agent's `skill_ids` and `datasource_ids` are written as names. Each
+value is resolved in this order: (1) a document with that name in the bundle
+wins, even if the value looks like an id; (2) otherwise the name is looked up
+in the target project; (3) otherwise a value shaped like a platform id (UUID)
+is sent unchanged, so documents holding raw ids keep working; (4) otherwise,
+or when a name matches more than one entity, the apply fails with an error
+naming the reference and the document holding it, before anything is written.
+In-bundle skills and datasources are created before the assistant or workflow
+that uses them.
+
 ### Workflow
 
 A workflow is built with the SDK's own `WorkflowBuilder`, not hand-filled
@@ -667,7 +685,8 @@ codemie-iac --project my-project plan examples/simple/skill.yaml --id <id> --jso
 Global flags (`--project`, `-c`) go before the subcommand, `--json` after it.
 Credentials in the examples are `env:NAME` references; export those variables
 before applying. IDs inside workflows (`workflow_id`, `datasource_ids`,
-`skill_ids`) are placeholders.
+`skill_ids`) are placeholders, or names of skills and datasources that are
+resolved at apply time.
 
 **Example files**
 

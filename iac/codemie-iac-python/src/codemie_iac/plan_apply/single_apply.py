@@ -94,13 +94,14 @@ REFERENCE_FIELDS = frozenset(
     {
         "categories",
         "assistant_ids",
+        "skill_ids",
         "toolkits",
         "mcp_servers",
         "yaml_config",
         "setting_id",
     }
 )
-_ID_LIST_FIELDS = frozenset({"categories", "assistant_ids"})
+_ID_LIST_FIELDS = frozenset({"categories", "assistant_ids", "skill_ids"})
 
 
 def _reference_fields(document: Document) -> frozenset[str]:

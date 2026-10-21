@@ -218,6 +218,14 @@ class NameLookup:
             "unresolved_reference", kind.value, name, reason + suffix
         )
 
+    def find_live(self, kind: DocumentKind, name: str) -> Reference | None:
+        """The live entity named ``name`` in the target project, or ``None``
+        when there is none (or no client). Raises ``UnresolvedReferenceError``
+        if more than one matches."""
+        live = self._live(kind, name)
+        entity_id = getattr(live, "id", None)
+        return Reference(entity_id, live) if entity_id else None
+
     def require(
         self, kind: DocumentKind, name: str, referrer: str | None = None
     ) -> None:

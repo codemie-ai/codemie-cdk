@@ -22,7 +22,7 @@ from collections.abc import Callable, Iterable, Iterator
 from ..envelope import Document, DocumentKind
 from .errors import ApplyError
 
-__all__ = ["EDGE_EXTRACTORS", "DependencyGraph"]
+__all__ = ["EDGE_EXTRACTORS", "DependencyGraph", "value_edges"]
 
 Edge = tuple[DocumentKind, str]
 _Key = tuple[DocumentKind, str]
@@ -38,12 +38,18 @@ def _assistant_integrations(spec) -> Iterator[str]:
         yield server.mcp_connect_auth_token
 
 
+def _assistant_value_edges(spec) -> Iterator[Edge]:
+    for name in spec.skill_ids:
+        yield DocumentKind.SKILL, name
+
+
 def _assistant_edges(doc: Document) -> Iterator[Edge]:
     spec = doc.spec
     for name in spec.assistant_ids:
         yield DocumentKind.ASSISTANT, name
     for ctx in spec.context:
         yield DocumentKind.DATASOURCE, ctx.name
+    yield from _assistant_value_edges(spec)
     for name in spec.categories:
         yield DocumentKind.CATEGORY, name
     for name in _assistant_integrations(spec):
@@ -57,8 +63,16 @@ def _skill_edges(doc: Document) -> Iterator[Edge]:
     return iter(())
 
 
+def _agent_value_edges(assistant) -> Iterator[Edge]:
+    for name in assistant.skill_ids or ():
+        yield DocumentKind.SKILL, name
+    for name in assistant.datasource_ids or ():
+        yield DocumentKind.DATASOURCE, name
+
+
 def _workflow_edges(doc: Document) -> Iterator[Edge]:
     for assistant in doc.spec.workflow.assistants.values():
+        yield from _agent_value_edges(assistant)
         if assistant.assistant_id:
             yield DocumentKind.ASSISTANT, assistant.assistant_id
         elif assistant.name and assistant.system_prompt is None:
@@ -83,6 +97,17 @@ EDGE_EXTRACTORS: dict[DocumentKind, Callable[[Document], Iterable[Edge]]] = {
     DocumentKind.WORKFLOW: _workflow_edges,
     DocumentKind.DATASOURCE: _datasource_edges,
 }
+
+
+def value_edges(doc: Document) -> set[Edge]:
+    """The edges of ``doc`` whose names may also be raw platform ids (skill and
+    datasource values), as opposed to names that must resolve."""
+    if doc.meta.kind is DocumentKind.ASSISTANT:
+        return set(_assistant_value_edges(doc.spec))
+    if doc.meta.kind is DocumentKind.WORKFLOW:
+        agents = doc.spec.workflow.assistants.values()
+        return {e for a in agents for e in _agent_value_edges(a)}
+    return set()
 
 
 def _key(doc: Document) -> _Key:
