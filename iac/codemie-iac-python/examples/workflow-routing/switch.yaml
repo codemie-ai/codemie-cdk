@@ -1,0 +1,38 @@
+# Routing: `switch` tries each case in order and falls back to `default`.
+---
+version: v1
+meta:
+  kind: workflow
+  name: routing-switch
+spec:
+  workflow:
+    name: routing-switch
+    description: Multi-way branch
+    mode: Sequential
+    assistants:
+      worker:
+        system_prompt: Do the task you are given.
+    states:
+      - id: classify
+        assistant_id: worker
+        task: Classify the request
+        next:
+          switch:
+            cases:
+              - condition: category == "bug"
+                state_id: handle-bug
+              - condition: category == "feature"
+                state_id: handle-feature
+            default: handle-other
+      - id: handle-bug
+        assistant_id: worker
+        task: Handle a bug
+        next: {}
+      - id: handle-feature
+        assistant_id: worker
+        task: Handle a feature request
+        next: {}
+      - id: handle-other
+        assistant_id: worker
+        task: Handle anything else
+        next: {}

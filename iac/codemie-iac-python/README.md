@@ -552,6 +552,14 @@ update to an entity whose live project differs from the target fails with
 above), and so does a document (assistant, skill, integration, datasource)
 whose own project is not the target, in single apply and in bulk preflight.
 
+**The project of a document is optional.** `AssistantSpec.project`,
+`SkillSpec.project`, `IntegrationSpec.project_name` and every datasource's
+`project_name` default to `None`. The CLI fills an omitted one with the target
+project before planning or applying (single file and every document of a
+directory); the engine itself (`BulkCreator`, `SingleEntityPlanner`) does not,
+so library callers must set it. A project that is named and differs from the
+target is refused (`project_mismatch`).
+
 ## Where things live
 
 ```
@@ -564,3 +572,144 @@ src/codemie_iac/
   specs/             # one Spec class per resource kind
   plan_apply/        # bulk create and single-entity plan/apply (uses codemie_sdk)
 ```
+
+## CLI
+
+```
+codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] plan <file> --id <id> [--json]
+codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] apply <path> [--id <id>] [--json]
+```
+
+Global flags `--project`, `-c/--config` and `--env-file` go BEFORE the
+subcommand; `--json` goes after it.
+
+The `project` of a document (`project_name` for integrations and datasources)
+is optional and defaults to the target project. A different explicit value is
+refused with `project_mismatch`.
+
+`.env`: if `./.env` exists in the current directory it is read (a missing one is
+ignored); `--env-file PATH` reads that file instead (missing or unreadable is a
+config error, exit 4). Lines are `KEY=VALUE`; blank lines, `#` comments and an
+optional `export ` prefix are handled, matching single/double quotes around the
+value are stripped, `${}` is not expanded, and lines with an invalid key are
+skipped. Variables already set in the real environment always win; `.env` only
+fills in unset ones (nothing is written to `os.environ`). `${NAME}` references
+in `codemie.yaml` see the merged values, and so do `env:NAME` credential references
+in `apply` (so a secret like `JIRA_PROD_API_TOKEN` can live in `.env`).
+
+Exit codes: 0 success / nothing to do, 1 changes pending, 2 apply failed,
+3 unresolved input, 4 config error, 5 invalid document.
+
+Environment variables: `CODEMIE_API_URL`, `CODEMIE_AUTH_URL`, `CODEMIE_REALM`,
+`CODEMIE_CLIENT_ID`, `CODEMIE_CLIENT_SECRET`, `CODEMIE_USERNAME`,
+`CODEMIE_PASSWORD`, `CODEMIE_JWT_TOKEN`, `CODEMIE_PROJECT`,
+`CODEMIE_VERIFY_SSL` (default `true`; `false` disables TLS verification).
+
+`codemie.yaml` keys: `project.name`; an `environment:` mapping with
+`codemie_api_url`, `auth_server_url`, `auth_realm_name`, `client_id`,
+`client_secret`, `username`, `password`, `jwt_token`; and the legacy `api:`
+mapping (`url`, `auth_url`, `realm`) as a fallback. Precedence per key: flag >
+environment variable (real environment, then `.env`) > `environment:` > `api:`.
+
+String values may reference environment variables: `${NAME}` or
+`${NAME:-default}`. An unset or empty variable without a default gives an empty
+string, which counts as "not set". A `$` not followed by `{` is left as is.
+
+```yaml
+environment:
+  codemie_api_url: ${CODEMIE_API_URL:-}
+  jwt_token: ${CODEMIE_JWT_TOKEN:-}
+```
+
+With a JWT (`CODEMIE_JWT_TOKEN` / `jwt_token`) the token is sent as a static
+bearer token and only the API URL is required. Without one, the API URL, auth
+URL and realm are required, plus client credentials or username/password.
+
+### Examples
+
+Example documents live in [`examples`](examples). Each file in
+the groups below is one document, except that `batch/` is a folder meant to
+be applied together.
+
+**Single mode: one file, one document.**
+
+```
+codemie-iac --project my-project plan examples/simple/assistant.yaml --id <id>
+codemie-iac --project my-project apply examples/simple/assistant.yaml
+```
+
+**Batch mode: a directory.** `apply <dir>` creates every `*.yaml` / `*.yml`
+file directly in that directory (not recursive), in dependency order, so
+documents may reference each other by name (the `batch/` example:
+integration, datasource, category, assistant).
+
+```
+codemie-iac --project my-project apply examples/batch
+```
+
+**Create:** `apply <file>` without `--id`, or `apply <dir>`.
+
+```
+codemie-iac --project my-project apply examples/simple/skill.yaml
+```
+
+**Update:** `apply <file> --id <id>` updates the existing asset with that
+platform id. `plan <file> --id <id>` shows the changes without applying them
+(exit code 1 when changes are pending); add `--json` for machine-readable
+output.
+
+```
+codemie-iac --project my-project apply examples/simple/skill.yaml --id <id>
+codemie-iac --project my-project plan examples/simple/skill.yaml --id <id>
+codemie-iac --project my-project plan examples/simple/skill.yaml --id <id> --json
+```
+
+Global flags (`--project`, `-c`) go before the subcommand, `--json` after it.
+Credentials in the examples are `env:NAME` references; export those variables
+before applying. IDs inside workflows (`workflow_id`, `datasource_ids`,
+`skill_ids`) are placeholders.
+
+**Example files**
+
+Simple (one per asset type):
+
+- [`simple/assistant.yaml`](examples/simple/assistant.yaml)
+- [`simple/category.yaml`](examples/simple/category.yaml)
+- [`simple/datasource.yaml`](examples/simple/datasource.yaml)
+- [`simple/integration.yaml`](examples/simple/integration.yaml)
+- [`simple/skill.yaml`](examples/simple/skill.yaml)
+- [`simple/workflow.yaml`](examples/simple/workflow.yaml)
+
+Assistant with one integration:
+
+- [`assistant-integrations/assistant_with_datasource.yaml`](examples/assistant-integrations/assistant_with_datasource.yaml)
+- [`assistant-integrations/assistant_with_mcp_server.yaml`](examples/assistant-integrations/assistant_with_mcp_server.yaml)
+- [`assistant-integrations/assistant_with_tool.yaml`](examples/assistant-integrations/assistant_with_tool.yaml)
+
+Workflow node types:
+
+- [`workflow-nodes/assistant_state.yaml`](examples/workflow-nodes/assistant_state.yaml)
+- [`workflow-nodes/sub_workflow_state.yaml`](examples/workflow-nodes/sub_workflow_state.yaml)
+- [`workflow-nodes/tool_state.yaml`](examples/workflow-nodes/tool_state.yaml)
+- [`workflow-nodes/transform_node.yaml`](examples/workflow-nodes/transform_node.yaml)
+
+Workflow routing styles:
+
+- [`workflow-routing/condition.yaml`](examples/workflow-routing/condition.yaml)
+- [`workflow-routing/iterator.yaml`](examples/workflow-routing/iterator.yaml)
+- [`workflow-routing/next_state.yaml`](examples/workflow-routing/next_state.yaml)
+- [`workflow-routing/parallel_next_states.yaml`](examples/workflow-routing/parallel_next_states.yaml)
+- [`workflow-routing/switch.yaml`](examples/workflow-routing/switch.yaml)
+
+Workflow inline assistants:
+
+- [`workflow-assistants/with_datasource_ids.yaml`](examples/workflow-assistants/with_datasource_ids.yaml)
+- [`workflow-assistants/with_skill_ids.yaml`](examples/workflow-assistants/with_skill_ids.yaml)
+- [`workflow-assistants/with_tools.yaml`](examples/workflow-assistants/with_tools.yaml)
+
+Batch folder (related documents):
+
+- [`batch/01-integration.yaml`](examples/batch/01-integration.yaml)
+- [`batch/02-datasource.yaml`](examples/batch/02-datasource.yaml)
+- [`batch/03-category.yaml`](examples/batch/03-category.yaml)
+- [`batch/04-assistant.yaml`](examples/batch/04-assistant.yaml)

@@ -1,0 +1,15 @@
+# Batch 1/4: an integration holding the Git credentials (as env: references).
+---
+version: v1
+meta:
+  kind: integration
+  name: github-main
+spec:
+  project_name: my-project
+  alias: github-main
+  credential_type: Git
+  credential_values:
+    - key: url
+      ref: env:GITHUB_MAIN_URL
+    - key: token
+      ref: env:GITHUB_MAIN_TOKEN

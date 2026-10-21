@@ -1,0 +1,24 @@
+# Routing: plain `state_id` goes to one next state.
+---
+version: v1
+meta:
+  kind: workflow
+  name: routing-next-state
+spec:
+  workflow:
+    name: routing-next-state
+    description: Two states in a row
+    mode: Sequential
+    assistants:
+      worker:
+        system_prompt: Do the task you are given.
+    states:
+      - id: first
+        assistant_id: worker
+        task: Do the first step
+        next:
+          state_id: second
+      - id: second
+        assistant_id: worker
+        task: Do the second step
+        next: {}
