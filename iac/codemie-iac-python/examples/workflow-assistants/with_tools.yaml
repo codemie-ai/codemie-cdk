@@ -1,0 +1,24 @@
+# Inline workflow assistant with tools: `integration_alias` names an
+# integration (a document in the same bundle, or one already in the project).
+---
+version: v1
+meta:
+  kind: workflow
+  name: wf-assistant-tools
+spec:
+  workflow:
+    name: wf-assistant-tools
+    description: Inline assistant with a Jira tool
+    mode: Sequential
+    assistants:
+      triager:
+        system_prompt: Use Jira to triage the issue.
+        model: gpt-4o
+        tools:
+          - name: generic_jira_tool
+            integration_alias: jira-prod
+    states:
+      - id: triage
+        assistant_id: triager
+        task: Triage the issue
+        next: {}

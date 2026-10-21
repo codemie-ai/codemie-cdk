@@ -1,0 +1,18 @@
+# Assistant using a toolkit tool: `settings` names the integration (by alias)
+# that supplies the tool's credentials.
+---
+version: v1
+meta:
+  kind: assistant
+  name: jira-helper
+spec:
+  name: jira-helper
+  description: Searches and updates Jira issues
+  system_prompt: Use the Jira tool to answer questions about issues.
+  project: my-project
+  llm_model_type: gpt-4o
+  toolkits:
+    - toolkit: Project Management
+      tools:
+        - name: generic_jira_tool
+          settings: jira-prod

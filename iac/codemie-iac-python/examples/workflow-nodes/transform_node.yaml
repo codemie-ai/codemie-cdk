@@ -1,0 +1,24 @@
+# Transform node: a ready-made processing step declared once under
+# `custom_nodes`; a state with `custom_node_id` runs it.
+---
+version: v1
+meta:
+  kind: workflow
+  name: node-transform
+spec:
+  workflow:
+    name: node-transform
+    description: One state that runs a transform node
+    mode: Sequential
+    custom_nodes:
+      - id: to-upper
+        custom_node_id: transform_node
+        name: Normalize
+        config:
+          input_key: text
+          output_key: normalized
+    states:
+      - id: normalize
+        custom_node_id: to-upper
+        task: Normalize the text
+        next: {}

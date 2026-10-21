@@ -1,0 +1,19 @@
+# Workflow: the minimal form, one inline assistant run by one state.
+---
+version: v1
+meta:
+  kind: workflow
+  name: release-notes
+spec:
+  workflow:
+    name: release-notes
+    description: Generate release notes from merged PRs
+    mode: Sequential
+    assistants:
+      writer:
+        system_prompt: Summarize the given PRs as release notes.
+    states:
+      - id: draft
+        assistant_id: writer
+        task: Draft the release notes
+        next: {}

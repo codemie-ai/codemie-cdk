@@ -1,0 +1,15 @@
+# Batch 2/4: a code datasource that uses the integration above by name.
+---
+version: v1
+meta:
+  kind: datasource
+  name: repo_kb
+spec:
+  type: code
+  name: repo_kb
+  project_name: my-project
+  description: Code knowledge base for the repository
+  link: https://github.com/org/repo
+  branch: main
+  index_type: code
+  setting_id: github-main

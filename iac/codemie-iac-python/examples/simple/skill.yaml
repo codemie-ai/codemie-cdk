@@ -1,0 +1,15 @@
+# Skill: reusable instructions that can be attached to assistants.
+---
+version: v1
+meta:
+  kind: skill
+  name: changelog-writer
+spec:
+  name: changelog-writer
+  description: Writes a changelog entry from a diff
+  # The platform requires at least 100 characters of content.
+  content: >-
+    Summarize the given diff as one changelog line. Start with a verb in the past tense,
+    mention the affected component, and keep the line under 100 characters.
+  project: my-project
+  visibility: project
