@@ -33,7 +33,7 @@ class SkillSpec(BaseModel):
     content: str
     project: str
     visibility: SkillVisibility | None = SkillVisibility.PROJECT
-    categories: list[str] | None = Field(default_factory=list)
+    categories: list[str] | None = Field(default_factory=list, max_length=3)
     enabled_builtin_subagents: list[str] | None = None
 
     @classmethod
