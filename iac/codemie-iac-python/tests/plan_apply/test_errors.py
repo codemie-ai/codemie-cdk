@@ -19,6 +19,7 @@ import pytest
 from codemie_sdk.exceptions import ApiError, CodeMieError
 
 from codemie_iac.plan_apply.errors import (
+    platform_detail,
     ApplyError,
     FieldError,
     PlatformRejectionError,
@@ -121,3 +122,26 @@ def test_platform_rejection_ignores_malformed_field_errors():
 )
 def test_scrub_replaces_common_encodings_of_a_secret(form):
     assert scrub(f"echo {form} end", ['p@ss/w&rd"x']) == "echo [redacted] end"
+
+
+# --- platform_detail: unwrapped HTTP errors ---
+
+
+def test_platform_detail_reads_error_message():
+    body = {"error": {"message": "content: too short"}}
+    assert platform_detail(_http_error(422, body)) == "422: content: too short"
+
+
+def test_platform_detail_reads_top_level_detail():
+    assert platform_detail(_http_error(400, {"detail": "bad"})) == "400: bad"
+
+
+def test_platform_detail_is_none_without_a_readable_message():
+    assert platform_detail(ValueError("x")) is None
+    assert platform_detail(_http_error(500, {})) is None
+    assert platform_detail(ApiError("bad")) is None
+
+
+def test_platform_detail_is_capped():
+    text = platform_detail(_http_error(500, {"detail": "x" * 5000}))
+    assert len(text) < 600

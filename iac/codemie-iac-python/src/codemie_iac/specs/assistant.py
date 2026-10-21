@@ -433,7 +433,7 @@ class AssistantSpec(BaseModel):
     description: str
     icon_url: str | None = None
     system_prompt: str
-    project: str
+    project: str | None = None
     context: list[ContextSpec] = Field(default_factory=list)
     llm_model_type: str
     toolkits: list[ToolKitDetailsSpec] = Field(default_factory=list)

@@ -50,9 +50,9 @@ def test_roundtrip_integration():
 
 def test_roundtrip_skill():
     spec = SkillSpec(
-        name="x",
-        description="d",
-        content="c",
+        name="skill-x",
+        description="A valid skill description",
+        content="c" * 100,
         project="p",
     )
     assert SkillSpec.model_validate(spec.model_dump()) == spec
@@ -66,9 +66,9 @@ def test_roundtrip_category():
 def test_unknown_field_rejected():
     with pytest.raises(ValidationError, match="(?i)extra"):
         SkillSpec(
-            name="x",
-            description="d",
-            content="c",
+            name="skill-x",
+            description="A valid skill description",
+            content="c" * 100,
             project="p",
             bogus_field="x",
         )
@@ -103,7 +103,7 @@ def test_skill_spec_from_entity():
     skill = SkillCreateRequest(
         name="changelog-writer",
         description="Writes a changelog entry from a diff",
-        content="Summarize the given diff as one changelog line.",
+        content="Summarize the given diff as one changelog line. " * 3,
         project="my-project",
     )
     spec = SkillSpec.from_entity(skill)
@@ -167,7 +167,41 @@ def test_integration_spec_from_entity_allows_alias_none_with_no_credentials():
 def test_skill_allows_at_most_three_categories():
     from codemie_iac.specs.skill import SkillSpec
 
-    base = dict(name="s", description="d", content="c", project="p")
+    base = dict(
+        name="skill-s",
+        description="A valid skill description",
+        content="c" * 100,
+        project="p",
+    )
     SkillSpec(categories=["a", "b", "c"], **base)
     with pytest.raises(ValidationError):
         SkillSpec(categories=["a", "b", "c", "d"], **base)
+
+
+# --- platform rules for skills ---
+
+
+_PLATFORM_SKILL = dict(
+    name="skill-x", description="A valid skill description", content="c" * 100
+)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"content": "c" * 99},
+        {"description": "short"},
+        {"description": "d" * 1001},
+        {"name": "ab"},
+        {"name": "Not_Kebab"},
+        {"name": "-leading"},
+    ],
+)
+def test_skill_spec_rejects_what_platform_rejects(change):
+    with pytest.raises(ValidationError):
+        SkillSpec(**{**_PLATFORM_SKILL, **change})
+
+
+def test_skill_spec_accepts_boundaries():
+    SkillSpec(**{**_PLATFORM_SKILL, "content": "c" * 100, "description": "d" * 10})
+    SkillSpec(**{**_PLATFORM_SKILL, "name": "abc"})

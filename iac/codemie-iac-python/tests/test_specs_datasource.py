@@ -220,6 +220,7 @@ def test_code_spec_from_entity():
         description="Code knowledge base",
         link="https://github.com/org/repo",
         branch="main",
+        index_type="code",
     )
     spec = CodeDatasourceSpec.from_entity(request)
     assert spec == CodeDatasourceSpec(
@@ -232,7 +233,7 @@ def test_code_spec_from_entity():
         timezone=request.timezone,
         link=request.link,
         branch=request.branch,
-        index_type=request.index_type,
+        index_type="code",
         files_filter=request.files_filter,
         embeddings_model=request.embeddings_model,
         summarization_model=request.summarization_model,
@@ -742,3 +743,27 @@ def test_secret_name_vectors_match_the_backend_exporter(name, expected):
     from codemie_iac.specs.datasource import _looks_secret
 
     assert _looks_secret(name) is expected
+
+
+# --- platform rules for code datasources ---
+
+
+_PLATFORM_CODE = dict(
+    name="ds",
+    description="d",
+    link="https://github.com/o/r",
+    branch="main",
+    index_type="code",
+)
+
+
+@pytest.mark.parametrize("missing", ["link", "branch", "index_type"])
+def test_code_datasource_requires_link_branch_index_type(missing):
+    data = {k: v for k, v in _PLATFORM_CODE.items() if k != missing}
+    with pytest.raises(ValidationError):
+        CodeDatasourceSpec(**data)
+
+
+def test_code_datasource_rejects_unknown_index_type():
+    with pytest.raises(ValidationError):
+        CodeDatasourceSpec(**{**_PLATFORM_CODE, "index_type": "bogus"})

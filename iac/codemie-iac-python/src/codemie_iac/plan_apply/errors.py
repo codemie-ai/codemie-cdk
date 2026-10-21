@@ -183,3 +183,24 @@ class PlatformRejectionError(ApplyError):
         super().__init__(
             error_type, entity_kind, entity_name, scrub(str(cause), secrets)
         )
+
+
+_DETAIL_LIMIT = 500
+
+
+def platform_detail(exc: BaseException) -> str | None:
+    """``"<status>: <message>"`` of a platform HTTP error, else ``None``.
+
+    For errors that do not pass through ``PlatformRejectionError`` (a failing
+    read while planning): ``requests.HTTPError`` keeps the platform's
+    explanation only in its response, not in ``str(exc)``. Not scrubbed:
+    callers scrub with the secrets they know. Capped.
+    """
+    if not isinstance(exc, PLATFORM_ERRORS):
+        return None
+    status, body = _status_and_body(exc)
+    errors = _parse_field_errors(body)
+    if status is None or not errors:
+        return None
+    message = "; ".join(e.message for e in errors)
+    return f"{status}: {message[:_DETAIL_LIMIT]}"

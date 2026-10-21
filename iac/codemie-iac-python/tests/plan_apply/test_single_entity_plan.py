@@ -430,17 +430,17 @@ def test_skill_categories_are_compared_as_plain_values():
     from codemie_iac.specs.skill import SkillSpec
 
     spec = SkillSpec(
-        name="sk",
-        description="d",
-        content="c",
+        name="skill-sk",
+        description="A valid skill description",
+        content="c" * 100,
         project="proj",
         categories=["code_review"],
     )
-    doc = _doc(DocumentKind.SKILL, "sk", spec)
+    doc = _doc(DocumentKind.SKILL, "skill-sk", spec)
     live = {
-        "name": "sk",
-        "description": "d",
-        "content": "c",
+        "name": "skill-sk",
+        "description": "A valid skill description",
+        "content": "c" * 100,
         "project": "proj",
         "visibility": "project",
         "categories": ["code_review"],
@@ -490,3 +490,27 @@ def test_sharepoint_oauth_ids_are_compared(field):
     )
     assert same.is_empty
     assert [d.field for d in changed.differences] == [field]
+
+
+def test_omitted_assistant_slug_is_not_a_difference():
+    """The platform generates a slug from the name when the document omits it."""
+    doc = _doc(
+        DocumentKind.ASSISTANT,
+        "asst",
+        AssistantSpec(
+            name="asst",
+            description="d",
+            system_prompt="p",
+            project="proj",
+            llm_model_type="gpt",
+        ),
+    )
+    live = {
+        "name": "asst",
+        "description": "d",
+        "system_prompt": "p",
+        "project": "proj",
+        "llm_model_type": "gpt",
+        "slug": "asst",
+    }
+    assert diff(doc, live, FIELD_POLICIES["assistant"], _resolver()) == []

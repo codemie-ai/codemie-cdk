@@ -66,8 +66,14 @@ def _category(name="cat"):
     return _doc(DocumentKind.CATEGORY, name, CategorySpec(name=name))
 
 
-def _skill(name="sk", **extra):
-    spec = SkillSpec(name=name, description="d", content="c", project=TARGET, **extra)
+def _skill(name="skill", **extra):
+    spec = SkillSpec(
+        name=name,
+        description="A valid skill description",
+        content="c" * 100,
+        project=TARGET,
+        **extra,
+    )
     return _doc(DocumentKind.SKILL, name, spec)
 
 
@@ -273,7 +279,7 @@ def test_unsupported_kind_variant_fails_preflight_via_adapter(monkeypatch):
 def test_skill_categories_are_sent_as_values_without_a_category_entity():
     client = FakeClient(skills=FakeSkills(), categories=FakeCategories())
     report = BulkCreator(client).create_all(
-        [_skill("sk", categories=["code_review"])], TARGET
+        [_skill("skill", categories=["code_review"])], TARGET
     )
     assert report.failed is None
     assert client.skills.calls_to("create")[0].args[0].categories == ["code_review"]
@@ -283,7 +289,7 @@ def test_skill_categories_are_sent_as_values_without_a_category_entity():
 def test_skill_categories_ignore_a_category_entity_of_the_same_name():
     client = FakeClient(skills=FakeSkills(), categories=FakeCategories())
     BulkCreator(client).create_all(
-        [_skill("sk", categories=["cat"]), _category("cat")], TARGET
+        [_skill("skill", categories=["cat"]), _category("cat")], TARGET
     )
     assert client.skills.calls_to("create")[0].args[0].categories == ["cat"]
 

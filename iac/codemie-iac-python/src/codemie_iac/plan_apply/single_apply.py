@@ -146,6 +146,8 @@ _DEFAULTED_WHEN_OMITTED: dict[str, frozenset[str]] = {
         {"embedding_model", "auth_type", "oauth_client_id", "oauth_tenant_id"}
     ),
     "svn": frozenset({"branch"}),
+    # Generated from the name when omitted.
+    "assistant": frozenset({"slug"}),
 }
 _EMBEDDING_MODEL_TYPES = frozenset({"knowledge_base_sharepoint"})
 
@@ -481,6 +483,12 @@ def _unobservable_findings(
     ]
 
 
+def _defaulted_when_omitted(document: Document, field: str) -> bool:
+    """Whether the platform fills ``field`` itself when the document omits it."""
+    key = getattr(document.spec, "type", None) or document.meta.kind.value
+    return field in _DEFAULTED_WHEN_OMITTED.get(key, ())
+
+
 def diff(
     document: Document,
     live: Any,
@@ -508,9 +516,7 @@ def diff(
     for field, document_value in _document_values(document).items():
         if field in handled or field not in policy.comparable or field not in live_view:
             continue
-        if document_value is None and field in _DEFAULTED_WHEN_OMITTED.get(
-            getattr(document.spec, "type", None), ()
-        ):
+        if document_value is None and _defaulted_when_omitted(document, field):
             continue
         finding = _compare_field(field, document_value, live_view[field])
         if finding is not None:
@@ -577,6 +583,8 @@ class ApplyResult(BaseModel):
     #: Fields the document authors that could not be compared; with an empty
     #: plan nothing was written for them (see ``force``). Field names only.
     uncomparable: list[str] = []
+    #: False only when an unchanged entity was left alone (empty plan, no write).
+    changed: bool = True
 
 
 class SingleEntityPlanner:
@@ -652,6 +660,7 @@ class SingleEntityPlanner:
                 return ApplyResult(
                     id=entity_id,
                     created=False,
+                    changed=False,
                     uncomparable=[c.field for c in plan.cannot_compare],
                 )
             if not force:

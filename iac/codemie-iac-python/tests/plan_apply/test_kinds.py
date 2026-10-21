@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from types import SimpleNamespace
+
 import pytest
 from codemie_sdk.models.datasource import UpdateProviderDataSourceRequest
 from codemie_sdk.exceptions import NotFoundError
@@ -47,7 +49,14 @@ from codemie_iac.specs.integration import IntegrationSpec
 from codemie_iac.specs.skill import SkillSpec
 from codemie_iac.specs.workflow import WorkflowSpec
 
-from .fakes import FakeClient, FakeDatasources, FakeIntegrations, FakeSkills
+from .fakes import (
+    FakeAssistants,
+    FakeClient,
+    FakeDatasources,
+    FakeIntegrations,
+    FakeSkills,
+    FakeWorkflows,
+)
 
 
 def _doc(kind, name, spec):
@@ -67,7 +76,12 @@ def _assistant():
 
 
 def _skill():
-    spec = SkillSpec(name="sk", description="d", content="c", project="proj")
+    spec = SkillSpec(
+        name="skill-sk",
+        description="A valid skill description",
+        content="c" * 100,
+        project="proj",
+    )
     return _doc(DocumentKind.SKILL, "sk", spec)
 
 
@@ -217,10 +231,10 @@ def test_update_and_get_route_with_entity_id(
     adapter.get(client, doc, "the-id")
 
     service = getattr(client, attr)
-    update_call, get_call = service.calls
-    assert update_call.method == update_m
+    # Some kinds read the live entity first to build their update body.
+    update_call = service.calls_to(update_m)[0]
+    get_call = service.calls_to(get_m)[-1]
     assert update_call.args[0] == "the-id"
-    assert get_call.method == get_m
     assert get_call.args[0] == "the-id"
 
 
@@ -235,7 +249,8 @@ def test_assistant_body_is_complete_and_resolved_overrides_apply():
     assert request.llm_model_type == "gpt"
     assert request.categories == ["cat_1"]
     adapter_for(doc).update(client, doc, "id-9", {})
-    assert isinstance(client.assistants.calls[1].args[1], AssistantUpdateRequest)
+    (update_call,) = client.assistants.calls_to("update")
+    assert isinstance(update_call.args[1], AssistantUpdateRequest)
 
 
 def test_workflow_body_renders_yaml_config_and_uses_resolver():
@@ -586,3 +601,29 @@ def test_workflow_start_hint_is_sent_and_engine_switches_reach_the_yaml():
     assert request.start_hint == "Describe the task"
     assert "enable_summarization_node: true" in request.yaml_config
     assert "messages_limit_before_summarization: 40" in request.yaml_config
+
+
+_ICON_SERVICES = [
+    (_assistant, FakeAssistants, "assistants"),
+    (_workflow, FakeWorkflows, "workflows"),
+]
+
+
+@pytest.mark.parametrize("make,fake,attr", _ICON_SERVICES)
+def test_omitted_icon_url_is_cleared_with_empty_string(make, fake, attr):
+    """None is dropped by the SDK and ignored by the backend; "" clears."""
+    doc = make()
+    live = SimpleNamespace(icon_url="https://example.com/i.png")
+    client = FakeClient(**{attr: fake(get=live)})
+    adapter_for(doc).update(client, doc, "id-1", {"project": "proj"})
+    (call,) = getattr(client, attr).calls_to("update")
+    assert call.args[1].icon_url == ""
+
+
+@pytest.mark.parametrize("make,fake,attr", _ICON_SERVICES)
+def test_omitted_icon_url_stays_unset_when_live_has_none(make, fake, attr):
+    doc = make()
+    client = FakeClient(**{attr: fake(get=SimpleNamespace(icon_url=None))})
+    adapter_for(doc).update(client, doc, "id-1", {"project": "proj"})
+    (call,) = getattr(client, attr).calls_to("update")
+    assert call.args[1].icon_url is None

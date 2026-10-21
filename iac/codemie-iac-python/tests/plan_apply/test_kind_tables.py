@@ -48,7 +48,7 @@ def test_field_policies_cover_every_kind_and_datasource_type():
 def test_deliberate_gaps_in_project_tables():
     # Workflows take the target project when written and categories are
     # global, so the document carries no project to compare.
-    assert set(guards._SPEC_PROJECT_FIELDS) == ALL_KINDS - {
+    assert set(guards.SPEC_PROJECT_FIELDS) == ALL_KINDS - {
         DocumentKind.WORKFLOW,
         DocumentKind.CATEGORY,
     }
