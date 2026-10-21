@@ -100,6 +100,7 @@ REFERENCE_FIELDS = frozenset(
     {
         "categories",
         "assistant_ids",
+        "skill_ids",
         "toolkits",
         "mcp_servers",
         "yaml_config",
@@ -108,7 +109,7 @@ REFERENCE_FIELDS = frozenset(
 )
 #: Skill categories are a fixed list of values, not Category entities.
 _VALUE_CATEGORY_KINDS = frozenset({DocumentKind.SKILL})
-_ID_LIST_FIELDS = frozenset({"categories", "assistant_ids"})
+_ID_LIST_FIELDS = frozenset({"categories", "assistant_ids", "skill_ids"})
 
 
 _INTEGRATION_FIELDS = frozenset({"toolkits", "mcp_servers"})
