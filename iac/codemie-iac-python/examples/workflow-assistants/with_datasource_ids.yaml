@@ -1,0 +1,23 @@
+# Inline workflow assistant with a datasource: `datasource_ids` takes
+# platform datasource ids (not document names).
+---
+version: v1
+meta:
+  kind: workflow
+  name: wf-assistant-datasource
+spec:
+  workflow:
+    name: wf-assistant-datasource
+    description: Inline assistant backed by a datasource
+    mode: Sequential
+    assistants:
+      researcher:
+        system_prompt: Answer from the datasource.
+        model: gpt-4o
+        datasource_ids:
+          - 00000000-0000-0000-0000-000000000001
+    states:
+      - id: answer
+        assistant_id: researcher
+        task: Answer the question
+        next: {}

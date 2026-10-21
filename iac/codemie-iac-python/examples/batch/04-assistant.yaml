@@ -1,0 +1,17 @@
+# Batch 4/4: an assistant that uses the datasource and the category above by
+# name. `apply <dir>` creates the four documents in dependency order.
+---
+version: v1
+meta:
+  kind: assistant
+  name: repo-helper
+spec:
+  name: repo-helper
+  description: Answers questions about the repository
+  system_prompt: Answer using the indexed repository code.
+  project: my-project
+  llm_model_type: gpt-4o
+  categories: [engineering]
+  context:
+    - context_type: code
+      name: repo_kb

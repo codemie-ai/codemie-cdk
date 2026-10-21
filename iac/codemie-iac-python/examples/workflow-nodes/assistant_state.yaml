@@ -1,0 +1,20 @@
+# Assistant state: a state with `assistant_id` runs an inline assistant
+# declared under `assistants`.
+---
+version: v1
+meta:
+  kind: workflow
+  name: node-assistant-state
+spec:
+  workflow:
+    name: node-assistant-state
+    description: One state that runs an assistant
+    mode: Sequential
+    assistants:
+      reviewer:
+        system_prompt: Review the given text and list problems.
+    states:
+      - id: review
+        assistant_id: reviewer
+        task: Review the input
+        next: {}

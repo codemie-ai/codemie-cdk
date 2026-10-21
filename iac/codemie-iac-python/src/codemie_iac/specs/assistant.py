@@ -83,13 +83,14 @@ can carry or reference a secret:
   integration configured at all", silently losing a real link.
 """
 
-from typing import Annotated
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from codemie_sdk.models.assistant import (
     AssistantCreateRequest,
     Context,
+    HedgingConfig,
     Integration,
     MCPServerConfig,
     MCPServerDetails,
@@ -101,6 +102,7 @@ from codemie_sdk.models.assistant import (
 )
 
 from ..credentials import CredentialRef
+from .datasource import _is_env_reference, _literal_secret_paths, _looks_secret
 
 # CR-008: see module docstring. Declared once and reused by both `env` and
 # `headers` below.
@@ -138,6 +140,30 @@ def _coerce_env_value(value: object) -> str:
     actually consumes a value: always a string.
     """
     return "" if value is None else str(value)
+
+
+def _narrow_auth_config(
+    value: Any, identifier: str, key: str = "auth_config", under_secret: bool = False
+) -> Any:
+    """Copy ``value``, replacing each non-empty literal string under a
+    secret-looking key with an ``env:`` reference built from ``identifier``
+    and the key path (the secret itself never reaches the document)."""
+    if isinstance(value, dict):
+        return {
+            k: _narrow_auth_config(
+                v, identifier, f"{key}_{k}", under_secret or _looks_secret(k)
+            )
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [
+            _narrow_auth_config(v, identifier, f"{key}_{i}", under_secret)
+            for i, v in enumerate(value)
+        ]
+    if under_secret and isinstance(value, str) and value:
+        if not _is_env_reference(value):
+            return CredentialRef.from_entity(identifier, key).root
+    return value
 
 
 class ContextSpec(BaseModel):
@@ -203,6 +229,7 @@ class ToolDetailsSpec(BaseModel):
     settings_config: bool = False
     user_description: str | None = None
     settings: str | None = None
+    auto_credentials_lookup: bool = True
 
     @classmethod
     def from_entity(cls, tool: ToolDetails) -> "ToolDetailsSpec":
@@ -214,6 +241,7 @@ class ToolDetailsSpec(BaseModel):
             settings=_integration_reference_name(
                 tool.settings, context=f"ToolDetails {tool.name!r}.settings"
             ),
+            auto_credentials_lookup=tool.auto_credentials_lookup,
         )
 
 
@@ -232,6 +260,7 @@ class ToolKitDetailsSpec(BaseModel):
     settings_config: bool = False
     is_external: bool = False
     settings: str | None = None
+    auto_credentials_lookup: bool = True
 
     @classmethod
     def from_entity(cls, toolkit: ToolKitDetails) -> "ToolKitDetailsSpec":
@@ -245,6 +274,7 @@ class ToolKitDetailsSpec(BaseModel):
                 toolkit.settings,
                 context=f"ToolKitDetails {toolkit.toolkit!r}.settings",
             ),
+            auto_credentials_lookup=toolkit.auto_credentials_lookup,
         )
 
 
@@ -254,7 +284,7 @@ class MCPServerConfigSpec(BaseModel):
     ``auth_token`` narrows from a raw secret string to ``CredentialRef``.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
     command: str | None = None
     url: _EnvOrHeaderValue | None = None
@@ -265,6 +295,21 @@ class MCPServerConfigSpec(BaseModel):
     auth_token: CredentialRef | None = None
     single_usage: bool = False
     tools: list[str] | None = None
+    audience: str | None = None
+    auth_config: dict[str, Any] | None = None
+
+    @field_validator("auth_config")
+    @classmethod
+    def _no_literal_secrets_in_auth_config(
+        cls, value: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        paths = list(_literal_secret_paths(value or {}, "auth_config"))
+        if paths:
+            raise ValueError(
+                f"secret-looking setting(s) {', '.join(paths)} must be env: "
+                "references, not literal values"
+            )
+        return value
 
     @classmethod
     def from_entity(
@@ -295,6 +340,10 @@ class MCPServerConfigSpec(BaseModel):
             ),
             single_usage=config.single_usage,
             tools=config.tools,
+            audience=config.audience,
+            auth_config=_narrow_auth_config(
+                config.auth_config, f"{assistant_name}_{server_name}"
+            ),
         )
 
 
@@ -384,7 +433,7 @@ class AssistantSpec(BaseModel):
     description: str
     icon_url: str | None = None
     system_prompt: str
-    project: str
+    project: str | None = None
     context: list[ContextSpec] = Field(default_factory=list)
     llm_model_type: str
     toolkits: list[ToolKitDetailsSpec] = Field(default_factory=list)
@@ -403,6 +452,10 @@ class AssistantSpec(BaseModel):
     prompt_variables: list[PromptVariableSpec] = Field(default_factory=list)
     skip_integration_validation: bool | None = False
     tool_permissions: ToolPermissionsConfigSpec | None = None
+    hedging_config: HedgingConfig | None = None
+    interactive_enabled: bool = False
+    enable_image_generation: bool | None = False
+    file_attachment_enabled: bool | None = None
 
     @classmethod
     def from_entity(cls, request: AssistantCreateRequest) -> "AssistantSpec":
@@ -434,6 +487,11 @@ class AssistantSpec(BaseModel):
                 PromptVariableSpec.from_entity(p) for p in request.prompt_variables
             ],
             skip_integration_validation=request.skip_integration_validation,
+            hedging_config=request.hedging_config,
+            # The SDK request reads a stored null as None; the platform treats it as off.
+            interactive_enabled=bool(request.interactive_enabled),
+            enable_image_generation=request.enable_image_generation,
+            file_attachment_enabled=request.file_attachment_enabled,
             tool_permissions=(
                 ToolPermissionsConfigSpec.from_entity(request.tool_permissions)
                 if request.tool_permissions is not None
