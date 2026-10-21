@@ -101,3 +101,44 @@ def test_two_cycle_raises_with_path():
 
     assert "a -> b -> a" in exc.value.reason
     assert exc.value.error_type == "dependency_cycle"
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"type": "svn", "link": "https://svn/x"},
+        {"type": "knowledge_base_sharepoint", "site_url": "https://sp/x"},
+        {"type": "knowledge_base_xray", "jql": "project = X"},
+    ],
+    ids=["svn", "sharepoint", "xray"],
+)
+def test_new_datasource_kinds_depend_on_their_integration(extra):
+    spec = TypeAdapter(DatasourceSpec).validate_python(
+        {
+            "name": "ds",
+            "project_name": "proj",
+            "description": "d",
+            "setting_id": "int",
+            **extra,
+        }
+    )
+    ds = Document(
+        version="v1",
+        meta=DocumentMeta(kind=DocumentKind.DATASOURCE, name="ds"),
+        spec=spec,
+    )
+    integration = _doc(
+        "integration",
+        "int",
+        {
+            "project_name": "proj",
+            "alias": "int",
+            "credential_type": "Jira",
+            "credential_values": [],
+        },
+    )
+
+    graph = DependencyGraph([ds, integration])
+
+    assert graph.edges(ds) == [(DocumentKind.INTEGRATION, "int")]
+    assert _names(graph.order()) == ["int", "ds"]

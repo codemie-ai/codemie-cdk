@@ -51,6 +51,9 @@ blocks for that YAML instead, plus two safety rules baked in:
 
 ## Install
 
+The IaC needs `codemie-sdk-python` 0.3.0 or newer (svn, SharePoint, Xray and
+provider datasource support).
+
 This package lives next to the Node IaC tool, under `iac/codemie-iac-python`.
 It depends on the local `codemie-sdk-python` package, so install both from
 this repo with Poetry:
@@ -227,7 +230,8 @@ print(to_yaml(Bundle([doc])))
 
 ### Datasource
 
-A datasource is one of nine kinds (code, Jira, Confluence, ...), each with
+A datasource is one of thirteen kinds (code, Jira, Confluence, svn, SharePoint,
+Xray, provider, ...), each with
 its own `*Spec` class. This example uses the code-repository kind:
 
 ```python
@@ -251,7 +255,107 @@ doc = Document(
 print(to_yaml(Bundle([doc])))
 ```
 
-Each of the other eight kinds has the matching `*DatasourceSpec.from_entity(request)`.
+Each of the other kinds has the matching `*DatasourceSpec.from_entity(request)`.
+
+The svn, SharePoint, Xray and provider kinds in document form (svn,
+SharePoint and Xray may carry a `setting_id`, the alias of an integration in
+the bundle or live in the target project; a provider datasource may not, as the
+platform does not store one):
+
+```yaml
+spec: {type: svn, name: svn_kb, project_name: my-project, description: d,
+       link: "https://svn.example.com/repo", branch: trunk, index_type: code}
+spec: {type: knowledge_base_sharepoint, name: sp_kb, project_name: my-project,
+       description: d, site_url: "https://example.sharepoint.com/sites/x",
+       auth_type: integration, setting_id: my-sharepoint-integration}
+spec: {type: knowledge_base_xray, name: xray_kb, project_name: my-project,
+       description: d, jql: "project = X"}
+spec: {type: provider, name: prov_kb, project_name: my-project, description: d,
+       provider_name: my-provider, toolkit_id: my-toolkit,
+       settings: {region: eu, api_key: "env:PROVIDER_API_KEY"}}
+```
+
+The `region` literal above passes the offline name check and is accepted at plan/apply only when `provider_secret_lookup=`
+reports that `region` is not secret (see below); without a lookup it must be an
+`env:` reference too.
+
+- **SharePoint OAuth uses an `access_token` reference.** The `oauth_codemie`
+  and `oauth_custom` auth types need an access token, which the platform never
+  stores or returns. A document carries it as `access_token: env:NAME`. The
+  token is optional in a document (an exported one has none), but creating such a
+  datasource, or updating it with a reindex, fails without it; a literal token
+  is rejected without echoing it. The value is read from the environment on
+  create and update. It is listed as not comparable in a plan.
+  `auth_type`, `oauth_client_id` and `oauth_tenant_id` are compared.
+- **Provider secret settings are `env:` references.** Two checks apply.
+  Offline, `ProviderDatasourceSpec` makes a best-effort, name-based check: a
+  literal string under a secret-looking setting name (a whole name part such as
+  `password`, `secret`, `token`, `apikey`, `credential`, `passphrase`, or
+  `api`/`private`/`access`/`secret`/`auth` + `key`, or `client` + `secret`,
+  after splitting on punctuation and camelCase) is rejected, naming the
+  document and the setting path such as `settings.auth.api_key`, never the
+  value. `key_prefix`, `tokenizer` and `region` are not flagged, and `env:`
+  references, empty strings and non-strings pass. At plan or apply, before any
+  write, the platform's provider schema decides authoritatively which settings
+  are secret; a literal value in such a setting is rejected, naming the field,
+  including under names the offline check does not recognise. The value is read from the
+  environment only when writing and never appears in plans, errors or logs.
+  Pass `provider_secret_lookup=` to `BulkCreator` / `SingleEntityPlanner` (a
+  callable `(provider_name, toolkit_id) -> secret setting names`, normally
+  built from the provider schema). The lookup belongs to that planner or
+  creator only. Without one, or if it fails or returns something other than a
+  collection of names (a bare string, non-string names), the check fails
+  closed: every non-empty string provider setting must be an `env:`
+  reference, and the error says the schema lookup was unavailable and why (no
+  lookup configured, or the exception type the lookup raised). Settings without
+  a string (numbers, booleans, lists of numbers) are not checked; a list or map
+  is checked per string it contains. A lookup that returns an empty collection
+  is an answer, not a failure: the schema marks no setting secret. No caller
+  in this package supplies a lookup, so unless you pass one, a literal such as
+  `region: eu` is refused and must be an `env:` reference.
+  `name`, `project_name`, `setting_id`, `description` and
+  `project_space_visible` are reserved and rejected inside `settings`.
+  Every `env:` reference in the settings is checked before the first write,
+  not only the ones the schema calls secret.
+- **Provider settings are compared key by key.** A key holding an `env:`
+  reference, or masked on the platform, is reported as not comparable
+  (`settings.<key>`); changes to the other keys still show in the plan.
+  `toolkit_id` cannot change: a different one is refused, recreate the
+  datasource.
+  On update, settings the document leaves out keep their live values (the
+  platform would otherwise reset them to the schema default). A provider
+  document takes no `cron_expression` or `timezone`, and a setting value that
+  starts with `env:` but is not a valid reference (`env:my-region`, `ENV:FOO`)
+  is rejected.
+- **Create-only and optional fields.** An Xray `embedding_model` is used on
+  create only (the update route does not store it) and is not compared. An svn
+  `branch` left out is `trunk` on create and the stored branch on update.
+- **Reindexing follows the plan.** As for code and Git FAQ datasources, an svn
+  update that changes only metadata (description, visibility, schedule) is sent
+  with `skip_reindex`. A SharePoint or Xray update that changes a source field
+  (`site_url`, `include_*`, `files_filter`, `jql`, auth fields, embedding model,
+  `setting_id`) is sent with `full_reindex`; for an OAuth SharePoint datasource
+  that needs the `access_token`. `force=True` reindexes.
+- **Provider settings are validated at plan time, not offline.** The settings
+  are free-form and schema-driven, so offline validation covers only the
+  envelope and that secret settings are `env:` references. Unknown or missing
+  provider settings are reported at plan time from the platform's provider
+  schema. svn, SharePoint and Xray are fully validated offline.
+- **Skill categories are values.** A skill's `categories` are entries of the
+  platform's fixed list (at most 3), sent as written; unlike an assistant's
+  categories they are not Category documents and create no dependency.
+- **Fields of the export round trip.** Documents also carry toolkit and tool
+  `auto_credentials_lookup`, an assistant's `hedging_config`,
+  `interactive_enabled`, `enable_image_generation` and `file_attachment_enabled`,
+  an inline MCP config's `audience` and `auth_config` (a secret-looking entry
+  must be an `env:` reference), a workflow's `start_hint` and its engine
+  switches (compared through `yaml_config`).
+- A datasource create answers with a message only, so apply looks the new
+  datasource up by project and name and returns its id. If the platform does
+  not list it yet, the page cap (20 pages of 100) is exhausted, or the lookup
+  fails, the datasource is reported as created without an id and a warning is
+  logged (datasource, project and exception type only); the apply does not fail.
+  A provider datasource is updated by its platform id.
 
 ### Assistant
 
@@ -438,11 +542,9 @@ datasource/<name>: datasource type 'knowledge_base_file': file datasources are n
 (error type `unsupported_datasource_type`). In a bulk run this is caught
 before the first write, so nothing is created.
 
-**Some datasource types are not available.** The IaC datasource spec has no
-SVN, SharePoint, Xray or provider-route variants, so such documents cannot be
-written and have no create/update path. A datasource's `setting_id` is read
-as the alias of an integration (in the bundle or live in the target project)
-and replaced by its platform id on write.
+A datasource's `setting_id` is read as the alias of an integration (in the
+bundle or live in the target project) and replaced by its platform id on
+write.
 
 **An entity in another project is never overwritten.** Planning or applying an
 update to an entity whose live project differs from the target fails with

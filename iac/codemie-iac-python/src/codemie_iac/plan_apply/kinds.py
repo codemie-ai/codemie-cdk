@@ -32,6 +32,7 @@ pre-rendered config) and ``resolve_assistant_name`` (a callable passed to
 returned, never stored.
 """
 
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -47,6 +48,9 @@ from codemie_sdk.models.datasource import (
     GitFaqDataSourceRequest,
     GoogleDataSourceRequest,
     JiraDataSourceRequest,
+    ProviderDataSourceRequest,
+    SharePointDataSourceRequest,
+    SvnDataSourceRequest,
     UpdateAzureDevOpsWikiDataSourceRequest,
     UpdateAzureDevOpsWorkItemDataSourceRequest,
     UpdateCodeDataSourceRequest,
@@ -54,7 +58,12 @@ from codemie_sdk.models.datasource import (
     UpdateGitFaqDataSourceRequest,
     UpdateGoogleDataSourceRequest,
     UpdateJiraDataSourceRequest,
+    UpdateProviderDataSourceRequest,
+    UpdateSharePointDataSourceRequest,
+    UpdateSvnDataSourceRequest,
+    UpdateXrayDataSourceRequest,
     UpdateXWikiDataSourceRequest,
+    XrayDataSourceRequest,
     XWikiDataSourceRequest,
 )
 from codemie_sdk.models.integration import Integration
@@ -64,6 +73,8 @@ from pydantic import BaseModel, ValidationError
 
 from ..envelope import Document, DocumentKind
 from .errors import ApplyError
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "ADAPTERS",
@@ -91,6 +102,8 @@ class KindAdapter:
     get(client, document, entity_id) -> live SDK object
     extract_id(response) -> platform id, or None when the response has none
     to_comparable(live) -> plain dict of the live object's fields
+    find_id(client, document) -> id of the created entity looked up by its
+        identity, for kinds whose create response carries no id
     """
 
     create: Callable[[Any, Document, Resolved], Any]
@@ -98,6 +111,29 @@ class KindAdapter:
     get: Callable[[Any, Document, str], Any]
     extract_id: Callable[[Any], str | None]
     to_comparable: Callable[[Any], dict[str, Any]]
+    find_id: Callable[[Any, Document], str | None] | None = None
+
+
+def created_id(
+    adapter: KindAdapter, client: Any, document: Document, response: Any
+) -> str | None:
+    """The id of a just-created entity: from the response, else by lookup.
+
+    The entity already exists when the lookup runs, so a lookup failure is
+    logged and answered with ``None`` rather than failing the create."""
+    entity_id = adapter.extract_id(response)
+    if entity_id is None and adapter.find_id is not None:
+        try:
+            entity_id = adapter.find_id(client, document)
+        except Exception as exc:  # noqa: BLE001 - the entity exists; never fail the create
+            logger.warning(
+                "created %s %r in project %r but could not look its id up: %s",
+                document.meta.kind.value,
+                document.meta.name,
+                getattr(document.spec, "project_name", None),
+                type(exc).__name__,
+            )
+    return entity_id
 
 
 # --- shared helpers --------------------------------------------------------
@@ -164,6 +200,7 @@ def _workflow_body(document: Document, resolved: Resolved) -> dict:
         "shared": definition.shared,
         "icon_url": definition.icon_url,
         "yaml_config": yaml_config,
+        "start_hint": document.spec.start_hint,
     }
     body.update(overrides)
     return body
@@ -177,8 +214,83 @@ def _integration_body(document: Document, resolved: Resolved) -> dict:
 def _datasource_body(document: Document, resolved: Resolved) -> dict:
     body = _spec_body(document, resolved)
     body.pop("type", None)  # the request classes fix their own type
-    # The code request carries a second, camelCase visibility key.
-    body.setdefault("project_space_visible", body.get("shared_with_project", False))
+    # The requests name the flag by its camelCase alias; the typed svn,
+    # SharePoint and Xray requests refuse the field name beside it.
+    visible = body.pop("shared_with_project", False)
+    body.setdefault("project_space_visible", visible)
+    # An omitted svn branch is the SDK's default on create and the stored value
+    # on update; the request rejects an explicit None.
+    if body.get("branch") is None:
+        body.pop("branch", None)
+    return body
+
+
+#: Fields the backend PUT overwrites when omitted, per datasource type: an
+#: update must always send them, from the document or else from live state.
+_HAZARD_FIELDS: dict[str, tuple[str, ...]] = {
+    "svn": ("prompt", "files_filter", "project_space_visible", "docs_generation"),
+    "knowledge_base_sharepoint": ("files_filter",),
+    "provider": ("description", "project_space_visible"),
+}
+
+#: Hazard fields the update request requires: a missing value cannot be sent.
+_REQUIRED_HAZARD_FIELDS: dict[str, tuple[str, ...]] = {
+    "provider": ("description", "project_space_visible"),
+}
+
+#: Document fields an update request cannot carry, per datasource type.
+_CREATE_ONLY_FIELDS: dict[str, tuple[str, ...]] = {
+    "svn": ("index_type",),
+    # The Xray update route does not pass the embedding model to the index.
+    "knowledge_base_xray": ("embedding_model",),
+}
+
+#: Request field -> the differently named field on the spec and on the live
+#: ``DataSource`` top level. Other hazard fields live in the type's sub-object.
+_TOP_LEVEL_FIELDS = {
+    "project_space_visible": "shared_with_project",
+    "description": "description",
+}
+_LIVE_SUBOBJECT = {"svn": "svn", "knowledge_base_sharepoint": "sharepoint"}
+
+
+def _is_authored(document: Document, resolved: Resolved, field: str) -> bool:
+    spec_field = _TOP_LEVEL_FIELDS.get(field, field)
+    spec = document.spec
+    return field in resolved or (
+        spec_field in spec.model_fields_set and getattr(spec, spec_field) is not None
+    )
+
+
+def _live_value(live: Mapping[str, Any], ds_type: str, field: str) -> Any:
+    top_field = _TOP_LEVEL_FIELDS.get(field)
+    if top_field:
+        return live.get(top_field)
+    return (live.get(_LIVE_SUBOBJECT.get(ds_type, "")) or {}).get(field)
+
+
+def _complete_body(document: Document, resolved: Resolved, live: Any) -> dict:
+    """The datasource body with every hazard field filled: from the document
+    when it authors the field, else from the live value."""
+    body = _datasource_body(document, resolved)
+    ds_type = document.spec.type
+    live = _to_comparable(live) if not isinstance(live, Mapping) else live
+    for field in _CREATE_ONLY_FIELDS.get(ds_type, ()):
+        body.pop(field, None)
+    for field in _HAZARD_FIELDS.get(ds_type, ()):
+        if _is_authored(document, resolved, field):
+            continue
+        live_value = _live_value(live, ds_type, field)
+        if live_value is not None:
+            body[field] = live_value
+        elif field in _REQUIRED_HAZARD_FIELDS.get(ds_type, ()):
+            raise ApplyError(
+                "missing_required_field",
+                "datasource",
+                document.meta.name,
+                f"{field!r} is required on update but is neither set in the "
+                "document nor present on the live datasource; set it in the document",
+            )
     return body
 
 
@@ -193,28 +305,36 @@ def _make_adapter(
     get_method: str = "get",
     extract: Callable[[Any], str | None] = _extract_id,
     get_fn: Callable[[Any, Document, str], Any] | None = None,
+    update_body: Callable[[Document, Resolved, Any], dict] | None = None,
+    to_comparable: Callable[[Any], dict[str, Any]] = _to_comparable,
+    find_id: Callable[[Any, Document], str | None] | None = None,
     adjust_update: Callable[[dict, frozenset[str] | None], dict] | None = None,
 ) -> KindAdapter:
     def create(client, document, resolved):
         request = _build(create_cls, body(document, resolved), document)
         return getattr(getattr(client, service), create_method)(request)
 
+    def get(client, document, entity_id):
+        return getattr(getattr(client, service), get_method)(entity_id)
+
     def update(client, document, entity_id, resolved, changed=None):
-        data = body(document, resolved)
+        if update_body is None:
+            data = body(document, resolved)
+        else:
+            live = (get_fn or get)(client, document, entity_id)
+            data = update_body(document, resolved, live)
         if adjust_update is not None:
             data = adjust_update(data, changed)
         request = _build(update_cls, data, document)
         return getattr(getattr(client, service), update_method)(entity_id, request)
-
-    def get(client, document, entity_id):
-        return getattr(getattr(client, service), get_method)(entity_id)
 
     return KindAdapter(
         create=create,
         update=update,
         get=get_fn or get,
         extract_id=extract,
-        to_comparable=_to_comparable,
+        to_comparable=to_comparable,
+        find_id=find_id,
     )
 
 
@@ -256,6 +376,12 @@ _DATASOURCE_CLASSES: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
         UpdateAzureDevOpsWorkItemDataSourceRequest,
     ),
     "knowledge_base_xwiki": (XWikiDataSourceRequest, UpdateXWikiDataSourceRequest),
+    "svn": (SvnDataSourceRequest, UpdateSvnDataSourceRequest),
+    "knowledge_base_sharepoint": (
+        SharePointDataSourceRequest,
+        UpdateSharePointDataSourceRequest,
+    ),
+    "knowledge_base_xray": (XrayDataSourceRequest, UpdateXrayDataSourceRequest),
 }
 
 # --- datasource live view ------------------------------------------------------
@@ -265,14 +391,21 @@ _DATASOURCE_CLASSES: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
 
 # A document's code datasource is always ``type: code``; the SDK reports the
 # index type (``code``, ``summary`` or ``chunk-summary``) as the datasource
-# type. The index type itself is compared through the code sub-object.
+# type. The index type itself is compared through the code sub-object. An SVN
+# datasource is reported under the same index types.
 _CODE_FAMILY = frozenset({"code", "summary", "chunk-summary"})
 
 
 def _datasource_view(live: Any) -> dict[str, Any]:
     view = _to_comparable(live)
     if view.get("type") in _CODE_FAMILY:
-        view["type"] = "code"
+        # An SVN datasource is stored under a code index type; its settings
+        # come from the ``svn`` sub-object, not the code one.
+        if view.get("svn") is not None:
+            view["type"] = "svn"
+            view.pop("code", None)
+        else:
+            view["type"] = "code"
     # Without a schedule the backend reports its default timezone, which a
     # document does not author: only expose the timezone alongside a cron.
     if not view.get("cron_expression"):
@@ -282,6 +415,35 @@ def _datasource_view(live: Any) -> dict[str, Any]:
 
 def _datasource_get(client: Any, document: Document, entity_id: str) -> Any:
     return _datasource_view(client.datasources.get(entity_id))
+
+
+#: A datasource create answers a message only, so the new id is looked up by
+#: project and name. Listing has no name filter: it pages through the project.
+_FIND_PAGE_SIZE = 100
+_FIND_MAX_PAGES = 20
+
+
+def _find_datasource_id(client: Any, document: Document) -> str | None:
+    spec = document.spec
+    for page in range(_FIND_MAX_PAGES):
+        found = client.datasources.list(
+            page=page, per_page=_FIND_PAGE_SIZE, projects=[spec.project_name]
+        )
+        for item in found:
+            # Name and project are unique across all datasource types; the list
+            # item does not say whether it is an svn one, so the type is not
+            # compared.
+            if item.name == spec.name and item.project_name == spec.project_name:
+                return item.id
+        if len(found) < _FIND_PAGE_SIZE:
+            return None
+    logger.warning(
+        "datasource %r in project %r not found within %d list pages",
+        spec.name,
+        spec.project_name,
+        _FIND_MAX_PAGES,
+    )
+    return None
 
 
 # --- reindex-aware updates -------------------------------------------------------
@@ -320,9 +482,50 @@ def _code_update(data: dict, changed: frozenset[str] | None) -> dict:
     return data
 
 
+def _svn_update(data: dict, changed: frozenset[str] | None) -> dict:
+    """Like code: the backend reprocesses the repository on every update unless
+    ``skip_reindex`` is set, so a metadata-only change skips it."""
+    if changed is not None and changed <= _CODE_METADATA_FIELDS:
+        return {**data, "skip_reindex": True}
+    return data
+
+
+#: Fields whose change alters what a knowledge-base index holds. The backend
+#: stores them without reindexing unless ``full_reindex`` is set.
+_SOURCE_FIELDS = {
+    "knowledge_base_sharepoint": frozenset(
+        {
+            "site_url",
+            "include_pages",
+            "include_documents",
+            "include_lists",
+            "max_file_size_mb",
+            "files_filter",
+            "auth_type",
+            "oauth_client_id",
+            "oauth_tenant_id",
+            "embedding_model",
+            "setting_id",
+        }
+    ),
+    "knowledge_base_xray": frozenset({"jql", "setting_id"}),
+}
+
+
+def _source_update(source_fields: frozenset[str]):
+    def adjust(data: dict, changed: frozenset[str] | None) -> dict:
+        if changed is None or changed & source_fields:
+            return {**data, "full_reindex": True}
+        return data
+
+    return adjust
+
+
 _UPDATE_ADJUSTERS = {
     "code": _code_update,
     "knowledge_base_git_faq": _git_faq_update,
+    "svn": _svn_update,
+    **{t: _source_update(f) for t, f in _SOURCE_FIELDS.items()},
 }
 
 DATASOURCE_ADAPTERS: dict[str, KindAdapter] = {
@@ -333,10 +536,86 @@ DATASOURCE_ADAPTERS: dict[str, KindAdapter] = {
         update_cls=update_cls,
         extract=_no_id,
         get_fn=_datasource_get,
+        update_body=(
+            _complete_body
+            if ds_type in _HAZARD_FIELDS or ds_type in _CREATE_ONLY_FIELDS
+            else None
+        ),
+        to_comparable=_datasource_view,
+        find_id=_find_datasource_id,
         adjust_update=_UPDATE_ADJUSTERS.get(ds_type),
     )
     for ds_type, (create_cls, update_cls) in _DATASOURCE_CLASSES.items()
 }
+
+
+#: The provider update request has no ``name`` / ``project_name`` field, yet
+#: the backend reads both from the PUT body and clears them when absent. Its
+#: body merges ``settings``, so they travel there.
+_PROVIDER_UPDATE_IDENTITY = ("name", "project_name")
+
+
+def _live_provider_settings(live: Any) -> dict[str, Any]:
+    """The provider settings stored on the live datasource (base and create
+    params, which the platform splits server-side)."""
+    provider = live.get("provider") if isinstance(live, Mapping) else live.provider
+    if provider is None:
+        return {}
+    params = provider.get if isinstance(provider, Mapping) else None
+    out: dict[str, Any] = {}
+    for name in ("base_params", "create_params"):
+        value = params(name) if params else getattr(provider, name, None)
+        out.update(value or {})
+    return out
+
+
+def _provider_update_body(document: Document, resolved: Resolved, live: Any) -> dict:
+    body = _complete_body(document, resolved, live)
+    # The backend resets every schema parameter the PUT omits to its default, so
+    # the live settings fill the keys the document leaves out. A secret comes
+    # back masked, which the platform reads as "keep the stored value".
+    body["settings"] = {**_live_provider_settings(live), **body.get("settings", {})}
+    identity = {
+        field: getattr(document.spec, field) for field in _PROVIDER_UPDATE_IDENTITY
+    }
+    body["settings"] = {**body.get("settings", {}), **identity}
+    return body
+
+
+def _provider_create(client: Any, document: Document, resolved: Resolved) -> Any:
+    request = _build(
+        ProviderDataSourceRequest, _datasource_body(document, resolved), document
+    )
+    return client.datasources.create_provider_datasource(
+        request.toolkit_id, request.provider_name, request
+    )
+
+
+def _provider_update(
+    client: Any,
+    document: Document,
+    entity_id: str,
+    resolved: Resolved,
+    changed: frozenset[str] | None = None,
+) -> Any:
+    live = client.datasources.get(entity_id)
+    request = _build(
+        UpdateProviderDataSourceRequest,
+        _provider_update_body(document, resolved, live),
+        document,
+    )
+    return client.datasources.update_provider_datasource(entity_id, request)
+
+
+_PROVIDER_ADAPTER = KindAdapter(
+    create=_provider_create,
+    update=_provider_update,
+    get=lambda client, _doc, entity_id: client.datasources.get(entity_id),
+    extract_id=_no_id,  # the backend answers a message only; no index id
+    to_comparable=_datasource_view,
+    find_id=_find_datasource_id,
+)
+DATASOURCE_ADAPTERS["provider"] = _PROVIDER_ADAPTER
 
 
 def _datasource_adapter(document: Document) -> KindAdapter:
@@ -363,7 +642,8 @@ _DATASOURCE_DISPATCH = KindAdapter(
         client, doc, entity_id
     ),
     extract_id=_no_id,
-    to_comparable=_to_comparable,
+    to_comparable=_datasource_view,
+    find_id=_find_datasource_id,
 )
 
 ADAPTERS: dict[DocumentKind, KindAdapter] = {

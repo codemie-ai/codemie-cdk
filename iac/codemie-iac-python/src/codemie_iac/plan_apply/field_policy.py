@@ -60,20 +60,23 @@ _ASSISTANT = _policy(
     comparable="name description icon_url system_prompt project llm_model_type "
     "toolkits conversation_starters shared is_react is_global slug temperature "
     "top_p tools_tokens_size_limit context mcp_servers assistant_ids "
-    "enabled_builtin_subagents prompt_variables categories tool_permissions",
+    "enabled_builtin_subagents prompt_variables categories tool_permissions "
+    "hedging_config interactive_enabled enable_image_generation "
+    "file_attachment_enabled",
 )
 
 _SKILL = _policy(
-    # slug/icon_url/mcp_servers/display_name are not authored by SkillSpec.
+    # slug/icon_url/mcp_servers/display_name are not authored by SkillSpec;
+    # bundle_warning is a server note about the skill bundle.
     deny="id display_name created_date created_by updated_date is_attached "
-    "reactions_count assistants_count mcp_servers slug icon_url",
+    "reactions_count assistants_count mcp_servers slug icon_url bundle_warning",
     comparable="name description project visibility categories "
     "enabled_builtin_subagents content",
 )
 
 _WORKFLOW = _policy(
     deny="id created_date update_date created_by display_name required_variables",
-    comparable="project name description yaml_config mode shared icon_url",
+    comparable="project name description yaml_config mode shared icon_url start_hint",
 )
 
 _CATEGORY = _policy(
@@ -105,15 +108,22 @@ _DS_COMMON = (
 )
 
 
-def _datasource(comparable: str = "", extra_deny: str = "") -> FieldPolicy:
-    deny = f"{_DS_DENY} {extra_deny}".split()
+def _datasource(
+    comparable: str = "", extra_deny: str = "", not_comparable: str = ""
+) -> FieldPolicy:
+    """``not_comparable`` names common fields the type's update cannot carry:
+    they leave the comparable set and join the deny list."""
+    dropped = set(not_comparable.split())
+    deny = f"{_DS_DENY} {extra_deny} {not_comparable}".split()
     # Only Google datasources author a document link (and its ``google_doc``
     # alias, which the flattened live view derives from ``google_doc_link``).
     if "google_doc_link" not in comparable.split():
         deny.extend(("google_doc_link", "google_doc"))
     return _policy(
         deny=" ".join(deny),
-        comparable=f"{_DS_COMMON} {comparable}".strip(),
+        comparable=" ".join(
+            [t for t in _DS_COMMON.split() if t not in dropped] + comparable.split()
+        ),
     )
 
 
@@ -145,6 +155,29 @@ FIELD_POLICIES: dict[str, FieldPolicy] = {
         "wiql_query organization project"
     ),
     "knowledge_base_xwiki": _datasource("space wiki"),
+    # The SVN update request cannot change the index type: create-only.
+    "svn": _datasource(
+        "link branch files_filter prompt docs_generation", extra_deny="index_type"
+    ),
+    "knowledge_base_sharepoint": _datasource(
+        "site_url include_pages include_documents include_lists max_file_size_mb "
+        "files_filter embedding_model auth_type oauth_client_id oauth_tenant_id",
+        # The OAuth access token is transient: the platform never returns it.
+        extra_deny="access_token",
+    ),
+    # The Xray update route does not store an embedding model: create-only.
+    "knowledge_base_xray": _datasource(
+        "jql", extra_deny="embedding_model", not_comparable="embeddings_model"
+    ),
+    # ``settings`` is derived from the live provider base/create params (see
+    # ``single_apply._flatten_live``); the raw params and provider id are
+    # server-shaped and denied.
+    "provider": _datasource(
+        "settings",
+        extra_deny="toolkit_id provider_name provider_id base_params create_params",
+        # The provider request takes no schedule.
+        not_comparable="cron_expression timezone",
+    ),
     "knowledge_base_file": _datasource(extra_deny="error updated_by"),
 }
 

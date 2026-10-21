@@ -14,8 +14,9 @@
 
 """Credential resolution that never leaks secret values."""
 
+import copy
 import os
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from typing import Any
 
 from pydantic import BaseModel
@@ -24,7 +25,13 @@ from pydantic_core import core_schema
 from ..credentials import CredentialRef
 from .errors import UnresolvableCredentialError
 
-__all__ = ["MCP_REF_FIELDS", "EnvCredentialResolver", "SecretValue"]
+__all__ = [
+    "MCP_REF_FIELDS",
+    "SECRET_FIELDS",
+    "EnvCredentialResolver",
+    "ProviderSecretLookup",
+    "SecretValue",
+]
 
 _MASK = "***"
 
@@ -107,9 +114,131 @@ def _iter_servers(spec: Any) -> Iterator[Any]:
         yield from getattr(assistant, "mcp_servers", None) or []
 
 
-def _iter_candidates(spec: Any) -> Iterator[Any]:
+# --- datasource secret fields ----------------------------------------------
+
+# (provider_name, toolkit_id) -> names of settings the platform provider schema
+# marks secret (parameter_type == SECRET). Injected by the caller that can reach
+# the platform. While it is unset or failing, provider settings fail closed:
+# every non-empty string setting must be an env: reference.
+ProviderSecretLookup = Callable[[str, str], Iterable[str]]
+
+
+def _schema_secret_keys(
+    spec: Any, lookup: ProviderSecretLookup | None
+) -> tuple[frozenset[str] | None, str]:
+    """Secret setting names per the platform provider schema and, when the
+    schema is unavailable, ``None`` plus the reason (never the error text,
+    which could echo a value).
+
+    The result must be a collection of names. A bare string would split into
+    characters, so it counts as "schema unavailable", like any non-string
+    member. An empty collection is a valid answer: the schema marks no
+    setting secret."""
+    if lookup is None:
+        return None, "no lookup configured"
+    try:
+        keys = lookup(spec.provider_name, spec.toolkit_id)
+        if isinstance(keys, (str, bytes)):
+            return None, f"lookup returned {type(keys).__name__}, not a collection"
+        names = frozenset(keys)
+    except Exception as exc:  # noqa: BLE001 - any lookup failure means "schema unknown"
+        return None, f"lookup raised {type(exc).__name__}"
+    if not all(isinstance(name, str) for name in names):
+        return None, "lookup returned a non-string name"
+    return names, ""
+
+
+def _string_leaves(value: Any) -> Iterator[Any]:
+    """The leaves of ``value`` that could be a secret or an ``env:`` reference."""
+    return (
+        leaf
+        for leaf in _walk(value)
+        if isinstance(leaf, (str, CredentialRef)) and leaf != ""
+    )
+
+
+def _provider_secret_settings(
+    spec: Any, lookup: ProviderSecretLookup | None
+) -> Iterator[tuple[str, Any, str]]:
+    """Schema-secret settings as ``(name, value, note)``. With the schema
+    unavailable every setting is in doubt, so must be an ``env:`` reference,
+    except values that hold no string (int, bool, float, None, containers of
+    those): those can be neither a secret string nor a reference. A dict or
+    list is in doubt per string leaf it contains."""
+    schema_keys, why = _schema_secret_keys(spec, lookup)
+    settings = getattr(spec, "settings", None) or {}
+    if schema_keys is not None:
+        for name, value in settings.items():
+            if name in schema_keys:
+                yield name, value, ""
+        return
+    note = f"; the provider schema lookup was unavailable ({why})"
+    for name, value in settings.items():
+        for leaf in _string_leaves(value):
+            yield name, leaf, note
+
+
+def _sharepoint_secrets(
+    spec: Any, lookup: ProviderSecretLookup | None
+) -> Iterator[tuple[str, Any, str]]:
+    yield "access_token", getattr(spec, "access_token", None), ""
+
+
+def _no_secret_settings(
+    spec: Any, lookup: ProviderSecretLookup | None
+) -> Iterator[tuple[str, Any, str]]:
+    return iter(())
+
+
+# Keyed by datasource ``type``; svn and xray have no secret fields. SharePoint
+# carries its transient OAuth ``access_token`` as an ``env:`` reference.
+SECRET_FIELDS: dict[
+    str,
+    Callable[[Any, ProviderSecretLookup | None], Iterable[tuple[str, Any, str]]],
+] = {
+    "provider": _provider_secret_settings,
+    "svn": _no_secret_settings,
+    "knowledge_base_sharepoint": _sharepoint_secrets,
+    "knowledge_base_xray": _no_secret_settings,
+}
+
+
+def _require_ref(spec: Any, setting: str, value: Any, note: str = "") -> Any:
+    """``value`` when it is an ``env:`` reference; otherwise reject, naming the
+    setting but never echoing the value."""
+    if _as_ref(value) is None:
+        raise UnresolvableCredentialError(
+            "literal_secret",
+            "datasource",
+            str(getattr(spec, "name", "")),
+            f"secret setting {setting!r} must be an env: reference, "
+            f"not a literal value{note}",
+        )
+    return value
+
+
+def _iter_datasource_secrets(
+    spec: Any, lookup: ProviderSecretLookup | None
+) -> Iterator[Any]:
+    extract = SECRET_FIELDS.get(getattr(spec, "type", None), _no_secret_settings)
+    for setting, value, note in extract(spec, lookup):
+        if value not in (None, ""):
+            yield _require_ref(spec, setting, value, note)
+
+
+def _iter_provider_setting_refs(spec: Any) -> Iterator[Any]:
+    """Every string leaf of the provider settings: the request body reveals
+    all ``env:`` references, so preflight must check all of them, not only the
+    ones the schema calls secret."""
+    if getattr(spec, "type", None) == "provider":
+        yield from _string_leaves(getattr(spec, "settings", None) or {})
+
+
+def _iter_candidates(spec: Any, lookup: ProviderSecretLookup | None) -> Iterator[Any]:
     for entry in getattr(spec, "credential_values", None) or []:
         yield getattr(entry, "ref", None)
+    yield from _iter_datasource_secrets(spec, lookup)
+    yield from _iter_provider_setting_refs(spec)
     for server in _iter_servers(spec):
         yield from _iter_config_values(server)
 
@@ -117,9 +246,24 @@ def _iter_candidates(spec: Any) -> Iterator[Any]:
 class EnvCredentialResolver:
     """Resolves ``env:NAME`` references from an environment mapping."""
 
-    def __init__(self, environ: Mapping[str, str] | None = None):
+    def __init__(
+        self,
+        environ: Mapping[str, str] | None = None,
+        provider_secret_lookup: ProviderSecretLookup | None = None,
+    ):
         self._environ = os.environ if environ is None else environ
         self._revealed: set[str] = set()
+        self._provider_secret_lookup = provider_secret_lookup
+
+    def with_provider_secret_lookup(
+        self, lookup: ProviderSecretLookup | None
+    ) -> "EnvCredentialResolver":
+        """A resolver with ``lookup``; the original is not modified. The copy
+        shares the environment and the revealed-values set, so error scrubbing
+        still sees every value handed out."""
+        other = copy.copy(self)
+        other._provider_secret_lookup = lookup
+        return other
 
     def revealed_values(self) -> frozenset[str]:
         """Secret values handed out so far, for scrubbing error text."""
@@ -144,11 +288,10 @@ class EnvCredentialResolver:
         self._revealed.add(value)
         return SecretValue(value)
 
-    @staticmethod
-    def collect_refs(spec: Any) -> list[CredentialRef]:
+    def collect_refs(self, spec: Any) -> list[CredentialRef]:
         """All distinct credential refs in a spec, in first-seen order."""
         seen: dict[str, CredentialRef] = {}
-        for candidate in _iter_candidates(spec):
+        for candidate in _iter_candidates(spec, self._provider_secret_lookup):
             ref = _as_ref(candidate)
             if ref is not None:
                 seen.setdefault(ref.root, ref)

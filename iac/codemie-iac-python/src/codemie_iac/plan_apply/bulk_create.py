@@ -22,10 +22,11 @@ apply: an entity whose name or content equals an existing one is still
 created. Platform ids are held in memory for the duration of one run only,
 and only substituted into request bodies; they are never written anywhere.
 
-Datasource and integration ``create`` return no id. Assistants reference datasources by
-``context`` name (the SDK ``Context`` has no id), so nothing needs the id;
-if a caller does ask for it, ``NameLookup.resolve`` finds the datasource
-live by name in the target project after it was created.
+Datasource ``create`` returns no id, so ``created_id`` looks the new
+datasource up by project and name in the target project and reports its id
+(none when the platform does not list it yet). Assistants reference
+datasources by ``context`` name (the SDK ``Context`` has no id), so nothing
+else needs the id.
 
 ``build_resolved`` (and ``ResolveContext``) are reusable by single-entity
 apply: they turn a document's name references and credential refs into the
@@ -43,7 +44,11 @@ from pydantic import BaseModel, ConfigDict
 
 from ..credentials import CredentialRef
 from ..envelope import Document, DocumentKind
-from .credentials import MCP_REF_FIELDS, EnvCredentialResolver
+from .credentials import (
+    MCP_REF_FIELDS,
+    EnvCredentialResolver,
+    ProviderSecretLookup,
+)
 from .errors import (
     PLATFORM_ERRORS,
     ApplyError,
@@ -52,7 +57,7 @@ from .errors import (
     scrub,
 )
 from .guards import guard_name, guard_project, guard_supported
-from .kinds import adapter_for
+from .kinds import adapter_for, created_id
 from .lookup import EntityKey, NameLookup, Reference
 from .ordering import EDGE_EXTRACTORS, DependencyGraph
 
@@ -190,9 +195,9 @@ def _assistant_resolved(document: Document, ctx: ResolveContext) -> dict:
 
 
 def _skill_resolved(document: Document, ctx: ResolveContext) -> dict:
-    return {
-        "categories": ctx.ids(DocumentKind.CATEGORY, document.spec.categories or [])
-    }
+    # Skill categories are values of a fixed platform list and are sent as
+    # authored (unlike assistant categories, which are Category entities).
+    return {}
 
 
 def _integration_resolved(document: Document, ctx: ResolveContext) -> dict:
@@ -270,10 +275,19 @@ def _workflow_resolved(document: Document, ctx: ResolveContext) -> dict:
 
 
 def _datasource_resolved(document: Document, ctx: ResolveContext) -> dict:
+    resolved: dict = {}
     alias = document.spec.setting_id
-    if not alias:
-        return {}
-    return {"setting_id": ctx.ref(DocumentKind.INTEGRATION, alias).id}
+    if alias:
+        resolved["setting_id"] = ctx.ref(DocumentKind.INTEGRATION, alias).id
+    # Provider datasources carry free-form settings whose secret entries are
+    # ``env:`` references; reveal them only here, for the request body.
+    settings = getattr(document.spec, "settings", None)
+    if settings:
+        resolved["settings"] = ctx.reveal(settings)
+    token = getattr(document.spec, "access_token", None)
+    if token is not None:
+        resolved["access_token"] = ctx.reveal(token.root)
+    return resolved
 
 
 def _nothing(_document: Document, _ctx: ResolveContext) -> dict:
@@ -358,9 +372,18 @@ PREFLIGHT_CHECKS: list[Callable[[list[Document], ResolveContext], None]] = [
 class BulkCreator:
     """Creates every document of a bundle in dependency order."""
 
-    def __init__(self, client: Any, credentials: EnvCredentialResolver | None = None):
+    def __init__(
+        self,
+        client: Any,
+        credentials: EnvCredentialResolver | None = None,
+        provider_secret_lookup: ProviderSecretLookup | None = None,
+    ):
         self._client = client
         self._credentials = credentials or EnvCredentialResolver()
+        if provider_secret_lookup is not None:
+            self._credentials = self._credentials.with_provider_secret_lookup(
+                provider_secret_lookup
+            )
 
     def create_all(
         self, documents: Iterable[Document], target: str
@@ -415,7 +438,7 @@ class BulkCreator:
                 exc,
                 self._credentials.revealed_values(),
             ) from None
-        entity_id = adapter.extract_id(response)
+        entity_id = created_id(adapter, self._client, document, response)
         if entity_id is not None:
             ctx.created[(kind, name)] = entity_id
         return CreatedEntity(kind=kind, name=name, id=entity_id)

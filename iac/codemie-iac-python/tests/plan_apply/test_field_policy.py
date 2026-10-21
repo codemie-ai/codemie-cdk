@@ -20,17 +20,25 @@ fails here instead of silently becoming a perpetual diff (or being ignored).
 """
 
 import pytest
+from pydantic import TypeAdapter
 from codemie_sdk.models.assistant import Assistant
 from codemie_sdk.models.categories import CategoryResponse
-from codemie_sdk.models.datasource import DataSource
+from codemie_sdk.models.datasource import (
+    DataSource,
+    ProviderDataSourceRequest,
+    UpdateProviderDataSourceRequest,
+)
 from codemie_sdk.models.integration import Integration
 from codemie_sdk.models.skill import SkillDetailResponse
 from codemie_sdk.models.workflow import Workflow
 from pydantic import BaseModel
 
-from codemie_iac.envelope import DocumentKind
+from codemie_iac.envelope import Document, DocumentKind, DocumentMeta
 from codemie_iac.plan_apply.field_policy import FIELD_POLICIES
+from codemie_iac.plan_apply.credentials import EnvCredentialResolver
 from codemie_iac.plan_apply.kinds import DATASOURCE_ADAPTERS, _DATASOURCE_CLASSES
+from codemie_iac.plan_apply.single_apply import Difference, diff
+from codemie_iac.specs.datasource import DatasourceSpec
 
 _RESPONSES: dict[DocumentKind, type[BaseModel]] = {
     DocumentKind.ASSISTANT: Assistant,
@@ -50,6 +58,15 @@ _SUBOBJECT = {
     "knowledge_base_azure_devops_work_item": "azure_devops_work_item",
     "knowledge_base_xwiki": "xwiki",
     "knowledge_base_file": None,
+    "svn": "svn",
+    "knowledge_base_sharepoint": "sharepoint",
+    "knowledge_base_xray": "xray",
+    "provider": "provider",
+}
+# Provider requests are not in the generic adapter table (separate adapter).
+_WRITE_MODELS = {
+    **_DATASOURCE_CLASSES,
+    "provider": (ProviderDataSourceRequest, UpdateProviderDataSourceRequest),
 }
 
 
@@ -115,7 +132,7 @@ def test_every_readonly_response_field_is_classified(kind):
 
 @pytest.mark.parametrize("ds_type", list(DATASOURCE_ADAPTERS))
 def test_every_readonly_datasource_field_is_classified(ds_type):
-    write = set().union(*(_names(cls) for cls in _DATASOURCE_CLASSES[ds_type]))
+    write = set().union(*(_names(cls) for cls in _WRITE_MODELS[ds_type]))
     missing = _unclassified(
         ds_type, _live_fields(DataSource, _SUBOBJECT[ds_type]), write
     )
@@ -130,3 +147,197 @@ def test_file_datasource_policy_classifies_every_response_field():
         set(),
     )
     assert not missing, f"unclassified file datasource fields: {sorted(missing)}"
+
+
+# --- nested sub-objects flatten into the live view ---------------------------
+
+_LIVE_BASE = {
+    "id": "ds-7",
+    "project_name": "proj",
+    "repo_name": "ds",
+    "created_by": {"user_id": "u", "username": "x", "name": "n"},
+    "update_date": "2026-01-01T00:00:00",
+    "user_abilities": [],
+    "description": "d",
+    "project_space_visible": False,
+}
+
+
+def _document(**spec):
+    spec.setdefault("name", "ds")
+    spec.setdefault("project_name", "proj")
+    spec.setdefault("description", "d")
+    parsed = TypeAdapter(DatasourceSpec).validate_python(spec)
+    meta = DocumentMeta(kind=DocumentKind.DATASOURCE, name="ds")
+    return Document(version="v1", meta=meta, spec=parsed)
+
+
+def _findings(document, **live_fields):
+    live = DataSource.model_validate({**_LIVE_BASE, **live_fields})
+    return diff(
+        document,
+        live,
+        FIELD_POLICIES[document.spec.type],
+        EnvCredentialResolver({}),
+    )
+
+
+UNCHANGED_CASES = {
+    "svn": (
+        {
+            "type": "svn",
+            "link": "https://svn/x",
+            "branch": "trunk",
+            "files_filter": "*.c",
+            "prompt": "p",
+            "docs_generation": True,
+        },
+        {
+            "index_type": "code",
+            "vcs_type": "svn",
+            "link": "https://svn/x",
+            "branch": "trunk",
+            "files_filter": "*.c",
+            "prompt": "p",
+            "docs_generation": True,
+        },
+    ),
+    "knowledge_base_sharepoint": (
+        {
+            "type": "knowledge_base_sharepoint",
+            "site_url": "https://sp/x",
+            "include_pages": True,
+            "max_file_size_mb": 10,
+            "files_filter": "*.docx",
+        },
+        {
+            "index_type": "knowledge_base_sharepoint",
+            "sharepoint": {
+                "site_url": "https://sp/x",
+                "include_pages": True,
+                "max_file_size_mb": 10,
+                "files_filter": "*.docx",
+            },
+        },
+    ),
+    "knowledge_base_xray": (
+        {"type": "knowledge_base_xray", "jql": "project = X"},
+        {"index_type": "knowledge_base_xray", "xray": {"jql": "project = X"}},
+    ),
+}
+
+
+@pytest.mark.parametrize("ds_type", sorted(UNCHANGED_CASES))
+def test_unchanged_nested_subobject_compares_equal(ds_type):
+    spec, live = UNCHANGED_CASES[ds_type]
+    assert _findings(_document(**spec), **live) == []
+
+
+def test_changed_nested_subobject_field_is_a_difference():
+    spec, live = UNCHANGED_CASES["knowledge_base_xray"]
+    findings = _findings(_document(**spec), **{**live, "xray": {"jql": "project = Y"}})
+    assert [f.field for f in findings] == ["jql"]
+    assert isinstance(findings[0], Difference)
+
+
+_PROVIDER_SPEC = {
+    "type": "provider",
+    "provider_name": "prov",
+    "toolkit_id": "tk",
+    "settings": {"region": "eu"},
+}
+
+
+def _provider_live(base_params):
+    return {
+        "index_type": "provider",
+        "provider_fields": {
+            "provider_id": "p1",
+            "toolkit_id": "tk",
+            "base_params": base_params,
+            "create_params": {},
+        },
+    }
+
+
+def test_unchanged_provider_settings_compare_equal():
+    findings = _findings(
+        _document(**_PROVIDER_SPEC), **_provider_live({"region": "eu"})
+    )
+    assert findings == []
+
+
+def test_masked_provider_secret_is_non_comparable_not_a_difference():
+    spec = {
+        **_PROVIDER_SPEC,
+        "settings": {"region": "eu", "api_key": "env:PROV_KEY"},
+    }
+    findings = _findings(
+        _document(**spec),
+        **_provider_live({"region": "eu", "api_key": "********"}),
+    )
+    assert [type(f).__name__ for f in findings] == ["CannotCompare"]
+    assert findings[0].field == "settings.api_key"
+    assert "********" not in findings[0].reason
+
+
+# --- every spec field is classified, and comparable ones can be read live --------
+
+
+def _spec_classes():
+    import typing
+
+    from codemie_iac.specs.datasource import DatasourceSpec
+
+    return typing.get_args(typing.get_args(DatasourceSpec)[0])
+
+
+@pytest.mark.parametrize(
+    "spec_cls", _spec_classes(), ids=lambda c: c.model_fields["type"].default
+)
+def test_every_datasource_spec_field_is_classified_exactly_once(spec_cls):
+    policy = FIELD_POLICIES[spec_cls.model_fields["type"].default]
+    fields = set(spec_cls.model_fields)
+    assert fields - policy.comparable - policy.deny == set()
+    assert policy.comparable & policy.deny == set()
+
+
+_OPTIONAL_LIVE = {"cron_expression", "timezone"}  # exposed only with a schedule
+
+
+def _live_view_keys(live_payload):
+    from codemie_iac.plan_apply.single_apply import _flatten_live
+
+    live = DataSource.model_validate({**_LIVE_BASE, **live_payload})
+    adapter = DATASOURCE_ADAPTERS[_type_of(live_payload)]
+    return set(_flatten_live(adapter.to_comparable(live)))
+
+
+def _type_of(live_payload):
+    sub = {
+        "sharepoint": "knowledge_base_sharepoint",
+        "xray": "knowledge_base_xray",
+        "provider_fields": "provider",
+    }
+    for key, ds_type in sub.items():
+        if key in live_payload:
+            return ds_type
+    return "svn"
+
+
+@pytest.mark.parametrize(
+    "ds_type, live_payload",
+    [
+        ("svn", UNCHANGED_CASES["svn"][1]),
+        ("knowledge_base_sharepoint", UNCHANGED_CASES["knowledge_base_sharepoint"][1]),
+        ("knowledge_base_xray", UNCHANGED_CASES["knowledge_base_xray"][1]),
+        ("provider", _provider_live({"region": "eu"})),
+    ],
+)
+def test_every_comparable_spec_field_is_present_in_the_live_view(ds_type, live_payload):
+    spec_cls = next(
+        c for c in _spec_classes() if c.model_fields["type"].default == ds_type
+    )
+    comparable = FIELD_POLICIES[ds_type].comparable & set(spec_cls.model_fields)
+    missing = comparable - _live_view_keys(live_payload) - _OPTIONAL_LIVE
+    assert missing == set()

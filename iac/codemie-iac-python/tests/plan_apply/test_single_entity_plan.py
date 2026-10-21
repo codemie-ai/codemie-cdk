@@ -15,12 +15,14 @@
 from types import SimpleNamespace
 
 import pytest
+from codemie_sdk.models.datasource import DataSource
 from codemie_sdk.models.integration import IntegrationType
 from pydantic import TypeAdapter
 
 from codemie_iac.credentials import CredentialRef
 from codemie_iac.envelope import Document, DocumentKind, DocumentMeta
 from codemie_iac.plan_apply.credentials import EnvCredentialResolver
+from codemie_iac.plan_apply.errors import ApplyError
 from codemie_iac.plan_apply.field_policy import FIELD_POLICIES, policy_for
 from codemie_iac.plan_apply.kinds import DATASOURCE_ADAPTERS
 from codemie_iac.plan_apply.single_apply import (
@@ -28,9 +30,10 @@ from codemie_iac.plan_apply.single_apply import (
     Difference,
     Plan,
     SingleEntityPlanner,
+    _flatten_live,
     diff,
 )
-from .fakes import FakeAssistants, FakeClient
+from .fakes import FakeAssistants, FakeClient, FakeDatasources
 from codemie_iac.specs.assistant import AssistantSpec, PromptVariableSpec
 from codemie_iac.specs.datasource import DatasourceSpec
 from codemie_iac.specs.integration import CredentialRefEntry, IntegrationSpec
@@ -81,7 +84,7 @@ def _live_assistant(**over):
 
 
 def _resolver():
-    return EnvCredentialResolver({"JIRA_TOKEN": SECRET})
+    return EnvCredentialResolver({"JIRA_TOKEN": SECRET, "PROV_KEY": SECRET})
 
 
 def _run(doc, live):
@@ -236,3 +239,254 @@ def test_planner_reads_only_the_given_id():
 def test_planner_returns_empty_plan_when_live_matches():
     _, planner = _planner(_live_assistant())
     assert planner.plan(_assistant(), "asst-1", "proj").is_empty
+
+
+# --- svn / sharepoint / xray / provider datasources ---------------------------
+
+_NEW_DS = {
+    # The platform stores an SVN datasource under a code index type.
+    "svn": (
+        {
+            "index_type": "code",
+            "vcs_type": "svn",
+            "link": "https://svn/x",
+            "branch": "trunk",
+        },
+        {"link": "https://svn/x"},
+    ),
+    "knowledge_base_sharepoint": (
+        {"sharepoint": {"site_url": "https://sp/x", "files_filter": "*.docx"}},
+        {"site_url": "https://sp/x", "files_filter": "*.docx"},
+    ),
+    "knowledge_base_xray": ({"xray": {"jql": "project = X"}}, {"jql": "project = X"}),
+    "provider": (
+        {
+            "provider_fields": {
+                "provider_id": "p-1",
+                "toolkit_id": "tk",
+                "base_params": {"region": "eu"},
+                "create_params": {"api_key": "**********"},
+            }
+        },
+        {
+            "provider_name": "prov",
+            "toolkit_id": "tk",
+            "settings": {"region": "eu", "api_key": "env:PROV_KEY"},
+        },
+    ),
+}
+_CHANGED = {
+    "svn": ("link", "https://svn/other"),
+    "knowledge_base_sharepoint": ("files_filter", "*.pdf"),
+    "knowledge_base_xray": ("jql", "project = Y"),
+    "provider": ("settings", {"region": "us"}),
+}
+
+
+def _new_ds_doc(ds_type, **over):
+    data = {"type": ds_type, "name": "ds", "project_name": "proj", "description": "d"}
+    data.update(_NEW_DS[ds_type][1])
+    data.update(over)
+    spec = TypeAdapter(DatasourceSpec).validate_python(data)
+    return _doc(DocumentKind.DATASOURCE, "ds", spec)
+
+
+def _new_ds_live(ds_type, **over):
+    payload = {
+        "id": "ds-7",
+        "project_name": "proj",
+        "repo_name": "ds",
+        "index_type": ds_type,
+        "description": "d",
+        "created_by": {"user_id": "u", "username": "x", "name": "n"},
+        "update_date": "2026-01-01T00:00:00",
+        "user_abilities": [],
+        "completed": True,
+        "project_space_visible": False,
+    }
+    payload.update(_NEW_DS[ds_type][0])
+    payload.update(over)
+    return DataSource.model_validate(payload)
+
+
+def _ds_planner(live):
+    client = FakeClient(datasources=FakeDatasources(get=live))
+    return client, SingleEntityPlanner(client, credentials=_resolver())
+
+
+@pytest.mark.parametrize("ds_type", sorted(_NEW_DS))
+def test_new_kind_equal_to_live_gives_empty_plan(ds_type):
+    client, planner = _ds_planner(_new_ds_live(ds_type))
+    plan = planner.plan(_new_ds_doc(ds_type), "ds-7", "proj")
+    assert plan.differences == []
+    assert plan.is_empty
+    assert [c.method for c in client.datasources.calls] == ["get"]
+
+
+@pytest.mark.parametrize("ds_type", sorted(_NEW_DS))
+def test_new_kind_lists_the_differing_field(ds_type):
+    field, value = _CHANGED[ds_type]
+    live = _new_ds_live(ds_type)
+    if ds_type == "provider":  # no masked secret, so settings are comparable
+        live = _new_ds_live(
+            ds_type,
+            provider_fields={"toolkit_id": "tk", "base_params": {"region": "eu"}},
+        )
+    _, planner = _ds_planner(live)
+    plan = planner.plan(_new_ds_doc(ds_type, **{field: value}), "ds-7", "proj")
+    expected = "settings.region" if ds_type == "provider" else field
+    assert [d.field for d in plan.differences] == [expected]
+
+
+def test_provider_setting_change_is_planned_next_to_a_secret_reference():
+    _, planner = _ds_planner(_new_ds_live("provider"))
+    doc = _new_ds_doc("provider", settings={"region": "us", "api_key": "env:PROV_KEY"})
+    plan = planner.plan(doc, "ds-7", "proj")
+    assert [d.field for d in plan.differences] == ["settings.region"]
+    assert [c.field for c in plan.cannot_compare] == ["settings.api_key"]
+    assert not plan.is_empty
+
+
+def test_embedding_model_is_compared_against_the_live_embeddings_model():
+    ds_type = "knowledge_base_sharepoint"
+    _, planner = _ds_planner(_new_ds_live(ds_type, embeddings_model="emb-a"))
+    same = planner.plan(_new_ds_doc(ds_type, embedding_model="emb-a"), "ds-7", "proj")
+    changed = planner.plan(
+        _new_ds_doc(ds_type, embedding_model="emb-b"), "ds-7", "proj"
+    )
+    assert same.is_empty
+    assert [d.field for d in changed.differences] == ["embedding_model"]
+
+
+def test_xray_embedding_model_is_create_only_and_not_compared():
+    # The Xray update route never stores the model, so a difference could not
+    # be applied: it is not reported.
+    ds_type = "knowledge_base_xray"
+    _, planner = _ds_planner(_new_ds_live(ds_type, embeddings_model="emb-a"))
+    plan = planner.plan(_new_ds_doc(ds_type, embedding_model="emb-b"), "ds-7", "proj")
+    assert plan.is_empty
+
+
+def test_provider_schedule_is_not_a_comparable_field():
+    from codemie_iac.plan_apply.field_policy import FIELD_POLICIES
+
+    policy = FIELD_POLICIES["provider"]
+    assert not {"cron_expression", "timezone"} & set(policy.comparable)
+
+
+def test_sharepoint_oauth_fields_are_compared_and_the_token_is_not():
+    live = _new_ds_live(
+        "knowledge_base_sharepoint",
+        sharepoint={
+            "site_url": "https://sp/x",
+            "files_filter": "*.docx",
+            "auth_type": "integration",
+        },
+    )
+    _, planner = _ds_planner(live)
+    doc = _new_ds_doc(
+        "knowledge_base_sharepoint",
+        auth_type="oauth_custom",
+        access_token="env:SP_TOKEN",
+    )
+    plan = planner.plan(doc, "ds-7", "proj")
+    assert [d.field for d in plan.differences] == ["auth_type"]
+    assert [c.field for c in plan.cannot_compare] == ["access_token"]
+
+
+def test_provider_toolkit_change_is_refused_as_create_only():
+    _, planner = _ds_planner(_new_ds_live("provider"))
+    with pytest.raises(ApplyError) as err:
+        planner.plan(_new_ds_doc("provider", toolkit_id="other"), "ds-7", "proj")
+    assert err.value.error_type == "datasource_identity_mismatch"
+    assert "toolkit_id" in err.value.reason
+
+
+def test_provider_live_state_follows_the_real_datasource_shape():
+    # GET /v1/index/{id} answers ``provider_fields``; the SDK ``DataSource``
+    # exposes it as ``provider`` (provider_id, toolkit_id, base_params,
+    # create_params), which is what the comparable view and ``settings`` use.
+    live = _new_ds_live("provider")
+    assert live.provider.base_params == {"region": "eu"}
+    view = DATASOURCE_ADAPTERS["provider"].to_comparable(live)
+    assert "provider_fields" not in view
+    assert view["provider"]["toolkit_id"] == "tk"
+    assert _flatten_live(view)["settings"] == {
+        "region": "eu",
+        "api_key": "**********",
+    }
+    assert _flatten_live(view)["toolkit_id"] == "tk"
+
+
+def test_provider_secret_setting_is_not_comparable_and_never_leaks():
+    _, planner = _ds_planner(_new_ds_live("provider"))
+    plan = planner.plan(_new_ds_doc("provider"), "ds-7", "proj")
+    for text in (repr(plan), str(plan), plan.model_dump_json(), str(plan.model_dump())):
+        assert SECRET not in text
+        assert "**********" not in text
+
+
+def test_skill_categories_are_compared_as_plain_values():
+    from codemie_iac.specs.skill import SkillSpec
+
+    spec = SkillSpec(
+        name="sk",
+        description="d",
+        content="c",
+        project="proj",
+        categories=["code_review"],
+    )
+    doc = _doc(DocumentKind.SKILL, "sk", spec)
+    live = {
+        "name": "sk",
+        "description": "d",
+        "content": "c",
+        "project": "proj",
+        "visibility": "project",
+        "categories": ["code_review"],
+    }
+    policy = FIELD_POLICIES["skill"]
+    assert diff(doc, live, policy, _resolver()) == []
+    live["categories"] = ["testing"]
+    (finding,) = diff(doc, live, policy, _resolver())
+    assert (finding.field, finding.document_value) == ("categories", ["code_review"])
+
+
+@pytest.mark.parametrize(
+    "ds_type", ["knowledge_base_sharepoint", "knowledge_base_xray"]
+)
+def test_omitted_embedding_model_is_not_compared_to_the_platform_default(ds_type):
+    _, planner = _ds_planner(_new_ds_live(ds_type, embeddings_model="platform-default"))
+    plan = planner.plan(_new_ds_doc(ds_type), "ds-7", "proj")
+    assert plan.is_empty
+
+
+@pytest.mark.parametrize("field", ["oauth_client_id", "oauth_tenant_id"])
+def test_sharepoint_oauth_ids_are_compared(field):
+    live = _new_ds_live(
+        "knowledge_base_sharepoint",
+        sharepoint={
+            "site_url": "https://sp/x",
+            "files_filter": "*.docx",
+            "auth_type": "oauth_custom",
+            "oauth_client_id": "client-a",
+            "oauth_tenant_id": "tenant-a",
+        },
+    )
+    _, planner = _ds_planner(live)
+    base = {
+        "auth_type": "oauth_custom",
+        "access_token": "env:SP_TOKEN",
+        "oauth_client_id": "client-a",
+        "oauth_tenant_id": "tenant-a",
+    }
+    same = planner.plan(
+        _new_ds_doc("knowledge_base_sharepoint", **base), "ds-7", "proj"
+    )
+    changed = planner.plan(
+        _new_ds_doc("knowledge_base_sharepoint", **{**base, field: "other"}),
+        "ds-7",
+        "proj",
+    )
+    assert same.is_empty
+    assert [d.field for d in changed.differences] == [field]

@@ -80,11 +80,29 @@ def _live_value(live: Any, key: str) -> Any:
     return getattr(live, key, None)
 
 
+def _live_toolkit_id(live: Any) -> Any:
+    provider = _live_value(live, "provider")
+    return _live_value(provider, "toolkit_id") if provider is not None else None
+
+
 def guard_datasource_identity(document: Document, live: Any) -> None:
-    """Raise ``ApplyError`` if the live datasource has another name or project."""
+    """Raise ``ApplyError`` if the live datasource has another name, project
+    or (provider) toolkit."""
     if not _is_datasource(document):
         return
     spec = document.spec
+    live_toolkit = _live_toolkit_id(live)
+    if (
+        spec.type == "provider"
+        and live_toolkit is not None
+        and live_toolkit != spec.toolkit_id
+    ):
+        raise _error(
+            document,
+            "datasource_identity_mismatch",
+            f"toolkit_id cannot change (document {spec.toolkit_id!r}, live "
+            f"{live_toolkit!r}); recreate the datasource",
+        )
     live_name = _live_value(live, "name")
     live_project = _live_value(live, "project_name")
     if live_name == spec.name and live_project == spec.project_name:

@@ -52,8 +52,9 @@ def _assistant_edges(doc: Document) -> Iterator[Edge]:
 
 
 def _skill_edges(doc: Document) -> Iterator[Edge]:
-    for name in doc.spec.categories or []:
-        yield DocumentKind.CATEGORY, name
+    # Skill categories are values of a fixed platform list, not Category
+    # entities, so a skill depends on nothing here.
+    return iter(())
 
 
 def _workflow_edges(doc: Document) -> Iterator[Edge]:

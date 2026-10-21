@@ -213,8 +213,12 @@ def _live_toolkits(tools, settings):
             "label": "",
             "settings_config": False,
             "is_external": False,
+            "auto_credentials_lookup": True,
             "settings": settings,
-            "tools": [{"name": n, "settings_config": False} for n in tools],
+            "tools": [
+                {"name": n, "settings_config": False, "auto_credentials_lookup": True}
+                for n in tools
+            ],
         }
     ]
 
@@ -662,7 +666,7 @@ def _mcp_assistant(config=None, **server):
     ],
 )
 def test_every_revealed_mcp_ref_is_collected(doc, name):
-    assert [r.root for r in EnvCredentialResolver.collect_refs(doc.spec)] == [name]
+    assert [r.root for r in EnvCredentialResolver().collect_refs(doc.spec)] == [name]
 
 
 def test_unset_mcp_command_ref_fails_preflight_before_any_write():

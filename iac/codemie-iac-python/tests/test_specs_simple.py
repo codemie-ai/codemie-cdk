@@ -162,3 +162,12 @@ def test_integration_spec_from_entity_allows_alias_none_with_no_credentials():
     )
     spec = IntegrationSpec.from_entity(integration)
     assert spec.credential_values == []
+
+
+def test_skill_allows_at_most_three_categories():
+    from codemie_iac.specs.skill import SkillSpec
+
+    base = dict(name="s", description="d", content="c", project="p")
+    SkillSpec(categories=["a", "b", "c"], **base)
+    with pytest.raises(ValidationError):
+        SkillSpec(categories=["a", "b", "c", "d"], **base)
