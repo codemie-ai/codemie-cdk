@@ -363,6 +363,23 @@ client); the rest of the library stays offline. Ground rules:
   secret, a masked value) do not make a plan non-empty; `apply` lists them in
   `ApplyResult.uncomparable`. Pass `force=True` to write the full document
   anyway, e.g. to rotate a secret.
+- **A document's `meta.name` must equal the entity's own name** (the spec
+  `name`, the workflow's `name`, or the integration's `alias`). References and
+  the live lookup go by `meta.name`, while the platform uses the spec name, so
+  a difference is refused with `name_mismatch` before anything is written.
+- **Updates avoid needless reindexing.** A code datasource whose plan differs
+  only in metadata (description, visibility, schedule) is updated with
+  `skip_reindex`. A Git FAQ datasource with a changed source field (`link`,
+  `branch`, `files_filter`, `setting_id`) is sent whole with `full_reindex`;
+  otherwise its source fields are left out, because the backend rejects them
+  without a full reindex. `force=True` writes everything and reindexes.
+- **Rejected calls are scrubbed.** A platform rejection (the SDK raises
+  `requests.HTTPError`) becomes a `PlatformRejectionError` holding only the
+  status, a scrubbed message and the parsed field errors; the original
+  exception, whose request holds the resolved credentials, is not kept.
+  Secrets are also replaced in their JSON-escaped, URL-encoded and base64
+  forms. The SDK itself logs request bodies at `DEBUG` level, credentials
+  included, so keep the `codemie_sdk` logger above `DEBUG` while applying.
 
 ```python
 from codemie_sdk import CodeMieClient
@@ -422,16 +439,16 @@ datasource/<name>: datasource type 'knowledge_base_file': file datasources are n
 before the first write, so nothing is created.
 
 **Some datasource types are not available.** The IaC datasource spec has no
-SVN, SharePoint or provider-route variants, so such documents cannot be
+SVN, SharePoint, Xray or provider-route variants, so such documents cannot be
 written and have no create/update path. A datasource's `setting_id` is read
 as the alias of an integration (in the bundle or live in the target project)
 and replaced by its platform id on write.
 
 **An entity in another project is never overwritten.** Planning or applying an
 update to an entity whose live project differs from the target fails with
-`project_mismatch`, and so does a document (assistant, skill, integration,
-datasource) whose own project is not the target, in single apply and in bulk
-preflight.
+`project_mismatch` (for a datasource it is `datasource_identity_mismatch`, see
+above), and so does a document (assistant, skill, integration, datasource)
+whose own project is not the target, in single apply and in bulk preflight.
 
 ## Where things live
 

@@ -25,7 +25,12 @@ from typing import Any
 from ..envelope import Document, DocumentKind
 from .errors import ApplyError
 
-__all__ = ["guard_datasource_identity", "guard_project", "guard_supported"]
+__all__ = [
+    "guard_datasource_identity",
+    "guard_name",
+    "guard_project",
+    "guard_supported",
+]
 
 #: kind -> name of the spec field that carries the entity's project. Workflows
 #: take the target project when written and categories are global, so neither
@@ -35,6 +40,17 @@ _SPEC_PROJECT_FIELDS = {
     DocumentKind.SKILL: "project",
     DocumentKind.INTEGRATION: "project_name",
     DocumentKind.DATASOURCE: "project_name",
+}
+
+#: kind -> the spec field the platform knows the entity by. References resolve
+#: through ``meta.name``, so it has to be the same string.
+_SPEC_NAME_FIELDS = {
+    DocumentKind.ASSISTANT: lambda spec: spec.name,
+    DocumentKind.SKILL: lambda spec: spec.name,
+    DocumentKind.CATEGORY: lambda spec: spec.name,
+    DocumentKind.DATASOURCE: lambda spec: spec.name,
+    DocumentKind.WORKFLOW: lambda spec: spec.workflow.name,
+    DocumentKind.INTEGRATION: lambda spec: spec.alias,
 }
 
 _FILE_TYPE = "knowledge_base_file"
@@ -95,4 +111,22 @@ def guard_project(document: Document, target: str) -> None:
             document,
             "project_mismatch",
             f"document is in project {project!r}, not target {target!r}",
+        )
+
+
+def guard_name(document: Document) -> None:
+    """Raise ``ApplyError`` if ``meta.name`` differs from the entity's own name.
+
+    Bundle matching and the live lookup use ``meta.name``, while the platform
+    (and the names other entities reference) use the spec name, so the two
+    must be equal or a reference by either would miss.
+    """
+    spec_name = _SPEC_NAME_FIELDS[document.meta.kind](document.spec)
+    if spec_name != document.meta.name:
+        raise _error(
+            document,
+            "name_mismatch",
+            f"meta.name {document.meta.name!r} differs from the "
+            f"{'alias' if document.meta.kind is DocumentKind.INTEGRATION else 'name'}"
+            f" in the spec {spec_name!r}; they must be equal",
         )

@@ -85,14 +85,16 @@ class KindAdapter:
     """Operations for one kind (or one datasource type).
 
     create(client, document, resolved) -> raw SDK response
-    update(client, document, entity_id, resolved) -> raw SDK response
+    update(client, document, entity_id, resolved, changed=None) -> raw SDK
+        response; ``changed`` names the fields a plan found different (or
+        could not compare), ``None`` meaning "unknown: write everything"
     get(client, document, entity_id) -> live SDK object
     extract_id(response) -> platform id, or None when the response has none
     to_comparable(live) -> plain dict of the live object's fields
     """
 
     create: Callable[[Any, Document, Resolved], Any]
-    update: Callable[[Any, Document, str, Resolved], Any]
+    update: Callable[..., Any]
     get: Callable[[Any, Document, str], Any]
     extract_id: Callable[[Any], str | None]
     to_comparable: Callable[[Any], dict[str, Any]]
@@ -191,13 +193,17 @@ def _make_adapter(
     get_method: str = "get",
     extract: Callable[[Any], str | None] = _extract_id,
     get_fn: Callable[[Any, Document, str], Any] | None = None,
+    adjust_update: Callable[[dict, frozenset[str] | None], dict] | None = None,
 ) -> KindAdapter:
     def create(client, document, resolved):
         request = _build(create_cls, body(document, resolved), document)
         return getattr(getattr(client, service), create_method)(request)
 
-    def update(client, document, entity_id, resolved):
-        request = _build(update_cls, body(document, resolved), document)
+    def update(client, document, entity_id, resolved, changed=None):
+        data = body(document, resolved)
+        if adjust_update is not None:
+            data = adjust_update(data, changed)
+        request = _build(update_cls, data, document)
         return getattr(getattr(client, service), update_method)(entity_id, request)
 
     def get(client, document, entity_id):
@@ -278,6 +284,47 @@ def _datasource_get(client: Any, document: Document, entity_id: str) -> Any:
     return _datasource_view(client.datasources.get(entity_id))
 
 
+# --- reindex-aware updates -------------------------------------------------------
+#
+# The backend reindexes on a datasource update unless told otherwise, and
+# rejects a Git FAQ update that carries a source field without a full reindex.
+# ``changed`` (see ``KindAdapter``) lets an update say what it needs.
+
+_GIT_FAQ_SOURCE_FIELDS = frozenset({"link", "branch", "files_filter", "setting_id"})
+#: Code datasource fields whose change needs no reindex.
+_CODE_METADATA_FIELDS = frozenset(
+    {
+        "description",
+        "shared_with_project",
+        "project_space_visible",
+        "cron_expression",
+        "timezone",
+    }
+)
+
+
+def _git_faq_update(data: dict, changed: frozenset[str] | None) -> dict:
+    """A source change is sent whole with ``full_reindex``; otherwise the
+    source fields are left out (the backend answers 422 to a source field
+    without a full reindex)."""
+    if changed is None or changed & _GIT_FAQ_SOURCE_FIELDS:
+        return {**data, "full_reindex": True}
+    return {k: v for k, v in data.items() if k not in _GIT_FAQ_SOURCE_FIELDS}
+
+
+def _code_update(data: dict, changed: frozenset[str] | None) -> dict:
+    """Metadata-only changes skip the incremental reindex the backend starts
+    by default."""
+    if changed is not None and changed <= _CODE_METADATA_FIELDS:
+        return {**data, "skip_reindex": True}
+    return data
+
+
+_UPDATE_ADJUSTERS = {
+    "code": _code_update,
+    "knowledge_base_git_faq": _git_faq_update,
+}
+
 DATASOURCE_ADAPTERS: dict[str, KindAdapter] = {
     ds_type: _make_adapter(
         service="datasources",
@@ -286,6 +333,7 @@ DATASOURCE_ADAPTERS: dict[str, KindAdapter] = {
         update_cls=update_cls,
         extract=_no_id,
         get_fn=_datasource_get,
+        adjust_update=_UPDATE_ADJUSTERS.get(ds_type),
     )
     for ds_type, (create_cls, update_cls) in _DATASOURCE_CLASSES.items()
 }
@@ -308,9 +356,9 @@ _DATASOURCE_DISPATCH = KindAdapter(
     create=lambda client, doc, resolved: _datasource_adapter(doc).create(
         client, doc, resolved
     ),
-    update=lambda client, doc, entity_id, resolved: _datasource_adapter(doc).update(
-        client, doc, entity_id, resolved
-    ),
+    update=lambda client, doc, entity_id, resolved, changed=None: _datasource_adapter(
+        doc
+    ).update(client, doc, entity_id, resolved, changed),
     get=lambda client, doc, entity_id: _datasource_adapter(doc).get(
         client, doc, entity_id
     ),

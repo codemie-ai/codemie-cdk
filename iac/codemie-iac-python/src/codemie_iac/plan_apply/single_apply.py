@@ -54,7 +54,6 @@ from types import SimpleNamespace
 from typing import Any
 
 import yaml
-from codemie_sdk.exceptions import ApiError
 from pydantic import BaseModel, ConfigDict, computed_field
 
 from ..credentials import CredentialRef
@@ -66,9 +65,14 @@ from .bulk_create import (
     check_credentials,
     check_references,
 )
-from .errors import ApplyError, PlatformRejectionError
+from .errors import PLATFORM_ERRORS, ApplyError, PlatformRejectionError
 from .field_policy import FieldPolicy, policy_for
-from .guards import guard_datasource_identity, guard_project, guard_supported
+from .guards import (
+    guard_datasource_identity,
+    guard_name,
+    guard_project,
+    guard_supported,
+)
 from .kinds import adapter_for
 from .lookup import NameLookup
 
@@ -498,6 +502,7 @@ class SingleEntityPlanner:
 
     def plan(self, document: Document, entity_id: str, target: str) -> Plan:
         """Diff ``document`` against the entity ``entity_id`` (one read, no writes)."""
+        guard_name(document)
         guard_project(document, target)
         ctx = self._context(target, self._plan_credentials())
         return self._plan(document, entity_id, target, ctx)
@@ -530,17 +535,19 @@ class SingleEntityPlanner:
     ) -> ApplyResult:
         """Create (no ``entity_id``) or update the entity; never deletes.
 
-        References and credential refs are checked before anything is read or
-        written. An update with an empty plan sends no write, unless ``force``
+        References and credential refs are checked before anything is written
+        (references are looked up live, which is a read). An update with an empty plan sends no write, unless ``force``
         is set; fields the plan could not compare (a rotated secret, a masked
         value) are then not known to be unchanged, so they are listed in
         ``ApplyResult.uncomparable``. ``force`` writes the full document.
         """
         guard_supported(document)
+        guard_name(document)
         guard_project(document, target)
         ctx = self._context(target)
         check_references([document], ctx)
         check_credentials([document], ctx)
+        changed = None  # unknown: write everything
         if entity_id is not None:
             plan = self._plan(document, entity_id, target, ctx)
             if plan.is_empty and not force:
@@ -549,21 +556,25 @@ class SingleEntityPlanner:
                     created=False,
                     uncomparable=[c.field for c in plan.cannot_compare],
                 )
+            if not force:
+                changed = frozenset(d.field for d in plan.differences) | frozenset(
+                    c.field for c in plan.cannot_compare
+                )
         resolved = build_resolved(document, ctx)
         adapter = adapter_for(document)
         try:
             if entity_id is None:
                 response = adapter.create(self._client, document, resolved)
             else:
-                adapter.update(self._client, document, entity_id, resolved)
-        except ApiError as exc:
+                adapter.update(self._client, document, entity_id, resolved, changed)
+        except PLATFORM_ERRORS as exc:
             raise PlatformRejectionError(
                 "platform_rejection",
                 document.meta.kind.value,
                 document.meta.name,
                 exc,
                 self._credentials.revealed_values(),
-            ) from exc
+            ) from None
         if entity_id is not None:
             return ApplyResult(id=entity_id, created=False)
         return ApplyResult(id=adapter.extract_id(response), created=True)

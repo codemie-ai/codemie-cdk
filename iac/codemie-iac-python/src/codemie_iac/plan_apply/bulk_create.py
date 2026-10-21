@@ -14,14 +14,15 @@
 
 """Create-only, dependency-ordered bulk apply.
 
-``BulkCreator.create_all`` first runs every preflight check (cycles, adapter
+``BulkCreator.create_all`` first runs every preflight check
+(``PREFLIGHT_CHECKS``: cycles, supported kinds, target project, adapter
 support, reference resolution, credential resolution) and only then performs
 writes, in dependency order. There is no dedupe, update, delete or scoped
 apply: an entity whose name or content equals an existing one is still
 created. Platform ids are held in memory for the duration of one run only,
 and only substituted into request bodies; they are never written anywhere.
 
-Datasource ``create`` returns no id. Assistants reference datasources by
+Datasource and integration ``create`` return no id. Assistants reference datasources by
 ``context`` name (the SDK ``Context`` has no id), so nothing needs the id;
 if a caller does ask for it, ``NameLookup.resolve`` finds the datasource
 live by name in the target project after it was created.
@@ -31,22 +32,31 @@ apply: they turn a document's name references and credential refs into the
 ``resolved`` request-body overrides that ``KindAdapter`` expects.
 """
 
+import logging
+import traceback
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
 import yaml
-from codemie_sdk.exceptions import ApiError
 from pydantic import BaseModel, ConfigDict
 
 from ..credentials import CredentialRef
 from ..envelope import Document, DocumentKind
 from .credentials import MCP_REF_FIELDS, EnvCredentialResolver
-from .errors import ApplyError, FieldError, PlatformRejectionError, scrub
-from .guards import guard_project, guard_supported
+from .errors import (
+    PLATFORM_ERRORS,
+    ApplyError,
+    FieldError,
+    PlatformRejectionError,
+    scrub,
+)
+from .guards import guard_name, guard_project, guard_supported
 from .kinds import adapter_for
 from .lookup import EntityKey, NameLookup, Reference
 from .ordering import EDGE_EXTRACTORS, DependencyGraph
+
+_LOG = logging.getLogger(__name__)
 
 __all__ = [
     "PREFLIGHT_CHECKS",
@@ -302,6 +312,11 @@ def check_supported(documents: list[Document], _ctx: ResolveContext) -> None:
         guard_supported(document)
 
 
+def check_names(documents: list[Document], _ctx: ResolveContext) -> None:
+    for document in documents:
+        guard_name(document)
+
+
 def check_projects(documents: list[Document], ctx: ResolveContext) -> None:
     for document in documents:
         guard_project(document, ctx.lookup.target)
@@ -329,6 +344,7 @@ def check_credentials(documents: list[Document], ctx: ResolveContext) -> None:
 PREFLIGHT_CHECKS: list[Callable[[list[Document], ResolveContext], None]] = [
     check_cycles,
     check_supported,
+    check_names,
     check_projects,
     check_adapters,
     check_references,
@@ -368,6 +384,16 @@ class BulkCreator:
         if isinstance(exc, ApplyError):
             return exc
         secrets = self._credentials.revealed_values()
+        # Not an error the platform or a check reported: most likely a bug.
+        # The report keeps only the scrubbed message, so log the scrubbed
+        # traceback to keep the stack.
+        trace = "".join(traceback.format_exception(exc))
+        _LOG.error(
+            "unexpected error for %s/%s\n%s",
+            document.meta.kind.value,
+            document.meta.name,
+            scrub(trace, secrets),
+        )
         return ApplyError(
             "apply_failed",
             document.meta.kind.value,
@@ -381,14 +407,14 @@ class BulkCreator:
         resolved = build_resolved(document, ctx)
         try:
             response = adapter.create(self._client, document, resolved)
-        except ApiError as exc:
+        except PLATFORM_ERRORS as exc:
             raise PlatformRejectionError(
                 "platform_rejection",
                 kind.value,
                 name,
                 exc,
                 self._credentials.revealed_values(),
-            ) from exc
+            ) from None
         entity_id = adapter.extract_id(response)
         if entity_id is not None:
             ctx.created[(kind, name)] = entity_id

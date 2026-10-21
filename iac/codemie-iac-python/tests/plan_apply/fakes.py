@@ -131,20 +131,43 @@ class FakeDatasources(FakeService):
 
 
 class FakeIntegrations(FakeService):
+    """Like the backend: ``create`` answers with a message only (no id), and
+    the created integration is then found by listing."""
+
     DEFAULTS = {
-        "create": {"id": "int-1"},
-        "update": {"id": "int-1"},
+        "create": SimpleNamespace(message="Specified credentials saved"),
+        "update": SimpleNamespace(message="Specified credentials updated"),
         "get": SimpleNamespace(id="int-1"),
     }
 
+    def __init__(self, **responses: Any):
+        super().__init__(**responses)
+        self._created: list[Any] = []
+
     def create(self, settings):
-        return self._call("create", settings)
+        response = self._call("create", settings)
+        self._created.append(
+            SimpleNamespace(
+                id=f"int-{len(self._created) + 1}",
+                alias=getattr(settings, "alias", None),
+                project_name=getattr(settings, "project_name", None),
+                setting_type=getattr(settings, "setting_type", None),
+                credential_type=getattr(settings, "credential_type", None),
+            )
+        )
+        return response
 
     def update(self, setting_id, settings):
         return self._call("update", setting_id, settings)
 
     def get(self, integration_id, setting_type=None):
         return self._call("get", integration_id, setting_type=setting_type)
+
+    def list(self, setting_type=None, page=0, per_page=10, **kw):
+        self.calls.append(Call("list", (), {"setting_type": setting_type}))
+        if page != 0:
+            return []
+        return [i for i in self._created if i.setting_type == setting_type]
 
 
 class FakeCategories(FakeService):

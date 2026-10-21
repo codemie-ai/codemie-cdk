@@ -157,7 +157,7 @@ KIND_CASES = [
         "update",
         "get",
         Integration,
-        "int-1",
+        None,  # the backend answers with a message only; the id is looked up
         id="integration",
     ),
     pytest.param(

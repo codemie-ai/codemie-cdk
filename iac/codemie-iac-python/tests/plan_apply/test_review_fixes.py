@@ -16,6 +16,8 @@
 
 from types import SimpleNamespace
 
+import json
+
 import pytest
 from codemie_sdk.exceptions import ApiError
 from codemie_sdk.models.integration import IntegrationType
@@ -119,7 +121,7 @@ def test_invalid_body_reason_never_contains_input_values():
 
 def test_platform_rejection_scrubs_revealed_secrets():
     cause = ApiError(f"bad token {SECRET}", 422)
-    cause.response = {"errors": [{"field": "f", "message": f"x {SECRET}"}]}
+    cause.response = {"detail": [{"loc": ["body", "f"], "msg": f"x {SECRET}"}]}
     error = PlatformRejectionError(
         "platform_rejection", "assistant", "a", cause, [SECRET]
     )
@@ -134,6 +136,44 @@ def test_bulk_failure_reason_does_not_leak_revealed_secret():
     report = creator.create_all([_mcp_assistant()], TARGET)
     assert report.failed.error_type == "platform_rejection"
     assert SECRET not in report.model_dump_json()
+
+
+def _real_http_error(message):
+    """What the SDK raises: ``raise_for_status()`` on a failed request."""
+    import requests
+
+    response = requests.Response()
+    response.status_code = 422
+    response._content = json.dumps(
+        {"detail": [{"loc": ["body", "token"], "msg": f"bad {SECRET}"}]}
+    ).encode()
+    response.request = requests.Request(
+        "POST", "https://x/v1/assistants", data=json.dumps({"token": SECRET})
+    ).prepare()
+    return requests.HTTPError(message, response=response, request=response.request)
+
+
+def test_bulk_real_http_error_becomes_a_scrubbed_platform_rejection():
+    client = FakeClient(
+        assistants=FakeAssistants(create=_real_http_error(f"422 for {SECRET}"))
+    )
+    creator = BulkCreator(client, credentials=EnvCredentialResolver(CREDS))
+    report = creator.create_all([_mcp_assistant()], TARGET)
+    assert report.failed.error_type == "platform_rejection"
+    assert report.failed.structured_errors[0].field == "token"
+    assert SECRET not in report.model_dump_json()
+
+
+def test_single_apply_real_http_error_is_scrubbed_and_not_chained():
+    client = FakeClient(
+        assistants=FakeAssistants(create=_real_http_error(f"422 for {SECRET}"))
+    )
+    planner = SingleEntityPlanner(client, EnvCredentialResolver(CREDS))
+    with pytest.raises(PlatformRejectionError) as info:
+        planner.apply(_mcp_assistant(), None, TARGET)
+    error = info.value
+    assert SECRET not in f"{error} {error.reason} {error.structured_errors}"
+    assert error.__cause__ is None and error.__suppress_context__
 
 
 # --- CR-001 -----------------------------------------------------------------------

@@ -67,6 +67,7 @@ from .fakes import (
     FakeClient,
     FakeDatasources,
     FakeIntegrations,
+    FakeSkills,
 )
 
 TARGET = "proj"
@@ -576,6 +577,64 @@ def test_git_faq_datasource_identical_to_document_gives_empty_plan():
     assert plan.differences == [] and plan.cannot_compare == []
 
 
+# --- Reindex-aware datasource updates ---
+_GIT_FAQ_RAW = {
+    **_CODE_RAW,
+    "index_type": "knowledge_base_git_faq",
+    "files_filter": "docs/**",
+}
+_GIT_FAQ_SPEC = {
+    "type": "knowledge_base_git_faq",
+    "link": "https://git/x.git",
+    "branch": "main",
+    "files_filter": "docs/**",
+    "embedding_model": "emb",
+}
+
+
+def _sent_update(client):
+    return client.datasources.calls_to("update")[0].args[1]
+
+
+def test_git_faq_metadata_only_update_omits_source_fields_and_full_reindex():
+    client = FakeClient(
+        datasources=RawDatasources({**_GIT_FAQ_RAW, "description": "old"})
+    )
+    _planner(client).apply(_datasource(_GIT_FAQ_SPEC), "ds-1", TARGET)
+    sent = _sent_update(client)
+    assert sent.description == "d"
+    assert sent.link is None and sent.branch is None and sent.files_filter is None
+    assert not sent.full_reindex
+
+
+def test_git_faq_source_change_is_sent_whole_with_full_reindex():
+    client = FakeClient(datasources=RawDatasources(_GIT_FAQ_RAW))
+    doc = _datasource({**_GIT_FAQ_SPEC, "branch": "develop"})
+    _planner(client).apply(doc, "ds-1", TARGET)
+    sent = _sent_update(client)
+    assert sent.full_reindex is True
+    assert (sent.link, sent.branch) == ("https://git/x.git", "develop")
+
+
+def test_code_metadata_only_update_skips_the_reindex():
+    client = FakeClient(datasources=RawDatasources({**_CODE_RAW, "description": "old"}))
+    _planner(client).apply(_datasource(_CODE_SPEC), "ds-1", TARGET)
+    assert _sent_update(client).skip_reindex is True
+
+
+def test_code_source_change_keeps_the_default_reindex():
+    client = FakeClient(datasources=RawDatasources(_CODE_RAW))
+    doc = _datasource({**_CODE_SPEC, "branch": "develop"})
+    _planner(client).apply(doc, "ds-1", TARGET)
+    assert not _sent_update(client).skip_reindex
+
+
+def test_forced_update_writes_everything_and_reindexes():
+    client = FakeClient(datasources=RawDatasources(_CODE_RAW))
+    _planner(client).apply(_datasource(_CODE_SPEC), "ds-1", TARGET, force=True)
+    assert not _sent_update(client).skip_reindex
+
+
 # --- MCP credential refs are collected wherever they are revealed ---
 def _mcp_assistant(config=None, **server):
     config = config or MCPServerConfigSpec(command="npx")
@@ -694,3 +753,111 @@ def test_bundle_with_workflow_before_name_only_assistant_creates_in_order():
     report = BulkCreator(client).create_all([wf, _assistant("helper")], TARGET)
     assert report.failed is None
     assert [c.name for c in report.created] == ["helper", "wf"]
+
+
+# --- meta.name must equal the entity's own name ---
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: _skill(TARGET),
+        lambda: _datasource({"type": "knowledge_base_jira", "jql": "project = A"}),
+    ],
+)
+def test_meta_name_differing_from_spec_name_is_rejected(build):
+    doc = build()
+    doc.meta.name = "other-name"
+    with pytest.raises(ApplyError) as info:
+        _planner(FakeClient()).apply(doc, None, TARGET)
+    assert info.value.error_type == "name_mismatch"
+
+
+def test_bulk_create_rejects_a_name_mismatch_before_any_write():
+    doc = _skill(TARGET)
+    doc.meta.name = "other-name"
+    client = FakeClient()
+    with pytest.raises(ApplyError) as info:
+        BulkCreator(client).create_all([doc], TARGET)
+    assert info.value.error_type == "name_mismatch"
+    assert client.skills.calls == []
+
+
+# --- every live finder checks the project client-side ---
+def _stub_client(workflows=(), datasources=()):
+    return SimpleNamespace(
+        workflows=SimpleNamespace(
+            list=lambda page=0, **kw: list(workflows) if page == 0 else []
+        ),
+        datasources=SimpleNamespace(
+            list=lambda page=0, **kw: list(datasources) if page == 0 else []
+        ),
+    )
+
+
+def test_live_workflow_and_datasource_lookups_ignore_other_projects():
+    from codemie_iac.plan_apply.lookup import LIVE_FINDERS
+
+    client = _stub_client(
+        workflows=[
+            SimpleNamespace(name="w", project="other"),
+            SimpleNamespace(name="w", project=TARGET),
+        ],
+        datasources=[
+            SimpleNamespace(name="d", project_name="other"),
+            SimpleNamespace(name="d", project_name=TARGET),
+        ],
+    )
+    assert len(LIVE_FINDERS[DocumentKind.WORKFLOW](client, TARGET, "w")) == 1
+    assert len(LIVE_FINDERS[DocumentKind.DATASOURCE](client, TARGET, "d")) == 1
+
+
+# --- Plans over real SDK response models (not namespaces or dicts) ---
+def _real_assistant(**over):
+    from codemie_sdk.models.assistant import Assistant
+
+    raw = {
+        "id": "asst-1",
+        "name": "asst",
+        "description": "d",
+        "system_prompt": "p",
+        "project": TARGET,
+        "llm_model_type": "gpt",
+        "shared": True,
+        "created_by": {"user_id": "u", "username": "u", "name": "u"},
+        "toolkits": [],
+        "context": [],
+    }
+    return Assistant.model_validate({**raw, **over})
+
+
+def test_real_assistant_model_matching_the_document_gives_an_empty_plan():
+    client = FakeClient(assistants=FakeAssistants(get=_real_assistant()))
+    plan = _planner(client).plan(_assistant(), "asst-1", TARGET)
+    assert plan.differences == []
+
+
+def test_real_assistant_model_reports_exactly_the_edited_field():
+    client = FakeClient(
+        assistants=FakeAssistants(get=_real_assistant(system_prompt="old"))
+    )
+    plan = _planner(client).plan(_assistant(), "asst-1", TARGET)
+    assert [d.field for d in plan.differences] == ["system_prompt"]
+
+
+def test_real_skill_model_matching_the_document_gives_an_empty_plan():
+    from codemie_sdk.models.skill import SkillDetailResponse
+
+    live = SkillDetailResponse.model_validate(
+        {
+            "id": "sk-1",
+            "name": "s",
+            "description": "d",
+            "content": "c",
+            "project": TARGET,
+            "visibility": "project",
+            "createdDate": "2026-01-01T00:00:00",
+            "created_by": {"user_id": "u", "username": "u", "name": "u"},
+        }
+    )
+    client = FakeClient(skills=FakeSkills(get=live))
+    plan = _planner(client).plan(_skill(TARGET), "sk-1", TARGET)
+    assert plan.differences == []

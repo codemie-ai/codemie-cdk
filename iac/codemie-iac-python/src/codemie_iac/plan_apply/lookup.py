@@ -106,7 +106,7 @@ def _find_workflows(client: Any, target: str, name: str) -> list[Any]:
     items = _pages(
         lambda p: client.workflows.list(page=p, per_page=_PAGE_SIZE, projects=[target])
     )
-    return _named(items, name)
+    return [i for i in _named(items, name) if _in_project(i, target, "project")]
 
 
 def _find_datasources(client: Any, target: str, name: str) -> list[Any]:
@@ -115,7 +115,7 @@ def _find_datasources(client: Any, target: str, name: str) -> list[Any]:
             page=p, per_page=_PAGE_SIZE, projects=[target]
         )
     )
-    return _named(items, name)
+    return [i for i in _named(items, name) if _in_project(i, target, "project_name")]
 
 
 def _find_integrations(client: Any, target: str, name: str) -> list[Any]:
@@ -194,7 +194,7 @@ class NameLookup:
         try:
             return self._resolver.resolve(kind.value, name)
         except ReferenceResolutionError as exc:
-            if "ambiguous" in str(exc):
+            if exc.ambiguous:
                 raise self._error(kind, name, str(exc)) from exc
             return None
 

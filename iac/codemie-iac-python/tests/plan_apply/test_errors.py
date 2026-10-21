@@ -12,12 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+
+import pytest
+
 from codemie_sdk.exceptions import ApiError, CodeMieError
 
 from codemie_iac.plan_apply.errors import (
     ApplyError,
     FieldError,
     PlatformRejectionError,
+    scrub,
     UnresolvableCredentialError,
     UnresolvedReferenceError,
 )
@@ -44,7 +49,7 @@ def test_apply_error_attributes_and_hierarchy():
 def test_platform_rejection_without_field_errors():
     cause = ApiError("boom", status_code=500, response={"message": "x"})
     err = PlatformRejectionError("platform_rejection", "assistant", "a1", cause)
-    assert err.cause is cause
+    assert err.status_code == 500
     assert err.structured_errors is None
     assert err.reason == str(cause) == "boom"
 
@@ -56,25 +61,63 @@ def test_platform_rejection_without_response():
     assert err.structured_errors is None
 
 
-def test_platform_rejection_exposes_field_errors_verbatim():
-    cause = ApiError(
-        "invalid",
-        status_code=422,
-        response={
-            "errors": [
-                {"field": "name", "message": "too long"},
-                {"field": "llm", "message": "unknown"},
+def _http_error(status, body, message="boom"):
+    import requests
+
+    response = requests.Response()
+    response.status_code = status
+    response._content = json.dumps(body).encode()
+    return requests.HTTPError(message, response=response)
+
+
+def test_platform_rejection_parses_fastapi_validation_errors():
+    cause = _http_error(
+        422,
+        {
+            "detail": [
+                {"loc": ["body", "name"], "msg": "too long"},
+                {"loc": ["body", "llm", 0], "msg": "unknown"},
             ]
         },
     )
     err = PlatformRejectionError("platform_rejection", "assistant", "a1", cause)
+    assert err.status_code == 422
     assert err.structured_errors == [
         FieldError(field="name", message="too long"),
-        FieldError(field="llm", message="unknown"),
+        FieldError(field="llm.0", message="unknown"),
     ]
 
 
+def test_platform_rejection_parses_the_backend_error_envelope():
+    cause = _http_error(
+        400, {"error": {"message": "Invalid", "details": "bad name", "help": None}}
+    )
+    err = PlatformRejectionError("platform_rejection", "assistant", "a1", cause)
+    assert err.structured_errors == [
+        FieldError(field="(request)", message="Invalid: bad name")
+    ]
+
+
+def test_platform_rejection_does_not_keep_the_original_exception():
+    cause = _http_error(500, {})
+    err = PlatformRejectionError("platform_rejection", "assistant", "a1", cause)
+    assert not hasattr(err, "cause")
+
+
 def test_platform_rejection_ignores_malformed_field_errors():
-    cause = ApiError("invalid", response={"errors": [{"field": "x"}, "junk", 3]})
+    cause = ApiError("invalid", response={"detail": [{"loc": ["x"]}, "junk", 3]})
     err = PlatformRejectionError("platform_rejection", "assistant", "a1", cause)
     assert err.structured_errors is None
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        'p@ss/w&rd"x',  # raw
+        'p@ss/w&rd\\"x',  # JSON-escaped
+        "p%40ss%2Fw%26rd%22x",  # URL-encoded
+        "cEBzcy93JnJkIng=",  # base64 of the bare value
+    ],
+)
+def test_scrub_replaces_common_encodings_of_a_secret(form):
+    assert scrub(f"echo {form} end", ['p@ss/w&rd"x']) == "echo [redacted] end"
