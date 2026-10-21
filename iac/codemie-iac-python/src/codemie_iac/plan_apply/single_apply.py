@@ -138,6 +138,9 @@ _NESTED_DATASOURCE_KEYS = (
     "provider",
 )
 _WORKFLOW_FIELDS = {"name", "description", "mode", "shared", "icon_url"}
+#: Fields an omitted value clears on the platform (see ``_clear_omitted_icon``),
+#: so an omitted one is compared; any other omitted field is left to the platform.
+_CLEARED_WHEN_OMITTED = frozenset({"icon_url"})
 _EMBEDDING_MODEL_TYPES = frozenset({"knowledge_base_sharepoint"})
 
 
@@ -557,7 +560,8 @@ def diff(
     for field, document_value in _document_values(document).items():
         if field in handled or field not in policy.comparable or field not in live_view:
             continue
-        if document_value is None:  # not authored: the platform decides
+        if document_value is None and field not in _CLEARED_WHEN_OMITTED:
+            # not authored: the platform decides
             continue
         finding = _compare_field(field, document_value, live_view[field])
         if finding is not None:
@@ -624,6 +628,8 @@ class ApplyResult(BaseModel):
     #: Fields the document authors that could not be compared; with an empty
     #: plan nothing was written for them (see ``force``). Field names only.
     uncomparable: list[str] = []
+    #: False only when an unchanged entity was left alone (empty plan, no write).
+    changed: bool = True
 
 
 class SingleEntityPlanner:
@@ -699,6 +705,7 @@ class SingleEntityPlanner:
                 return ApplyResult(
                     id=entity_id,
                     created=False,
+                    changed=False,
                     uncomparable=[c.field for c in plan.cannot_compare],
                 )
             changed = frozenset(d.field for d in plan.differences) | frozenset(

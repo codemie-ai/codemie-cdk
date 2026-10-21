@@ -190,6 +190,21 @@ def _spec_body(document: Document, resolved: Resolved, **exclude: Any) -> dict:
     return body
 
 
+def _clear_omitted_icon(body: dict, live: Any) -> dict:
+    """An omitted ``icon_url`` clears one that is set on the live entity.
+
+    Neither the SDK (``exclude_none``) nor the backend (``if value is not None``)
+    treats ``None`` as "clear", so an empty string is sent instead.
+    """
+    if body.get("icon_url") is None and getattr(live, "icon_url", None):
+        body["icon_url"] = ""
+    return body
+
+
+def _assistant_update_body(document: Document, resolved: Resolved, live: Any) -> dict:
+    return _clear_omitted_icon(_spec_body(document, resolved), live)
+
+
 def _workflow_body(document: Document, resolved: Resolved) -> dict:
     definition = document.spec.workflow
     overrides = dict(resolved)
@@ -208,6 +223,10 @@ def _workflow_body(document: Document, resolved: Resolved) -> dict:
     }
     body.update(overrides)
     return body
+
+
+def _workflow_update_body(document: Document, resolved: Resolved, live: Any) -> dict:
+    return _clear_omitted_icon(_workflow_body(document, resolved), live)
 
 
 def _integration_body(document: Document, resolved: Resolved) -> dict:
@@ -753,6 +772,7 @@ ADAPTERS: dict[DocumentKind, KindAdapter] = {
         create_cls=AssistantCreateRequest,
         update_cls=AssistantUpdateRequest,
         check_response=_reject_declined_assistant,
+        update_body=_assistant_update_body,
     ),
     DocumentKind.SKILL: _make_adapter(
         service="skills",
@@ -766,6 +786,7 @@ ADAPTERS: dict[DocumentKind, KindAdapter] = {
         create_cls=WorkflowCreateRequest,
         update_cls=WorkflowUpdateRequest,
         create_method="create_workflow",
+        update_body=_workflow_update_body,
     ),
     DocumentKind.CATEGORY: _make_adapter(
         service="categories",

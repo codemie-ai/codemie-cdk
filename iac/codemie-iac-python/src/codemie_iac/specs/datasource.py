@@ -76,7 +76,7 @@ class _DatasourceSpecBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str
-    project_name: str
+    project_name: str | None = None
     description: str
     shared_with_project: bool = False
     setting_id: str | None = None
@@ -88,9 +88,10 @@ class CodeDatasourceSpec(_DatasourceSpecBase):
     """Narrows ``CodeDataSourceRequest`` (type=``code``)."""
 
     type: Literal["code"] = "code"
-    link: str | None = None
-    branch: str | None = None
-    index_type: str | None = None
+    # link, branch and index_type are required by the platform (as for svn).
+    link: str = Field(..., min_length=1, max_length=1000)
+    branch: str = Field(..., min_length=1, max_length=1000)
+    index_type: Literal["code", "summary", "chunk-summary"]
     files_filter: str | None = ""
     embeddings_model: str | None = None
     summarization_model: str | None = None
@@ -103,7 +104,7 @@ class CodeDatasourceSpec(_DatasourceSpecBase):
             **_base_kwargs(request),
             link=request.link,
             branch=request.branch,
-            index_type=request.index_type,
+            index_type=getattr(request.index_type, "value", request.index_type),
             files_filter=request.files_filter,
             embeddings_model=request.embeddings_model,
             summarization_model=request.summarization_model,

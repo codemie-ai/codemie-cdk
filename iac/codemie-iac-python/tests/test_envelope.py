@@ -26,9 +26,9 @@ def test_unknown_field_in_spec_is_named():
                 "version": "v1",
                 "meta": {"kind": "skill", "name": "x"},
                 "spec": {
-                    "name": "x",
-                    "description": "d",
-                    "content": "c",
+                    "name": "skill-x",
+                    "description": "A valid skill description",
+                    "content": "c" * 100,
                     "project": "p",
                     "bogus_field": 1,
                 },
@@ -50,8 +50,8 @@ def test_bundle_roundtrip_mixed_kinds():
             "meta": {"kind": "skill", "name": "skill1"},
             "spec": {
                 "name": "skill1",
-                "description": "d",
-                "content": "c",
+                "description": "A valid skill description",
+                "content": "c" * 100,
                 "project": "p",
             },
         }
@@ -164,7 +164,12 @@ def test_datasource_kind_with_other_kinds_spec_is_rejected():
     skill_doc = {
         "version": "v1",
         "meta": {"kind": "skill", "name": "x"},
-        "spec": {"name": "x", "description": "d", "content": "c", "project": "p"},
+        "spec": {
+            "name": "skill-x",
+            "description": "A valid skill description",
+            "content": "c" * 100,
+            "project": "p",
+        },
     }
     skill = Document.model_validate(skill_doc)
     with pytest.raises(ValidationError, match="requires spec to be"):
