@@ -40,7 +40,7 @@ class IntegrationSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    project_name: str
+    project_name: str | None = None
     alias: str | None = None
     default: bool = False
     is_global: bool | None = False

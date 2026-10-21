@@ -60,7 +60,11 @@ def test_roundtrip_preserves_explicit_none_over_a_non_none_default():
         version="v1",
         meta=DocumentMeta(kind="skill", name="s1"),
         spec=SkillSpec(
-            name="s1", description="d", content="c", project="p", visibility=None
+            name="skill-one",
+            description="A valid skill description",
+            content="c" * 100,
+            project="p",
+            visibility=None,
         ),
     )
     bundle = Bundle([doc])
