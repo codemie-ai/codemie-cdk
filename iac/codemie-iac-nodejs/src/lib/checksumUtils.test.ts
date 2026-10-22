@@ -19,6 +19,7 @@ function buildAssistant(partial: Partial<AssistantResource> & { name: string }):
     // Preserve explicitly provided optional fields
     shared: partial.shared,
     is_react: partial.is_react,
+    hide_tool_outputs: partial.hide_tool_outputs,
     is_global: partial.is_global,
     icon_url: partial.icon_url,
     toolkits: partial.toolkits,
@@ -143,6 +144,22 @@ describe('checksumUtils', () => {
       const checksum2 = calculateAssistantConfigChecksum(assistant);
 
       expect(checksum1).toBe(checksum2);
+    });
+
+    it('checksum is unchanged when hide_tool_outputs is absent or false', () => {
+      const base = buildAssistant({ name: 'Test' });
+
+      expect(calculateAssistantConfigChecksum({ ...base, hide_tool_outputs: false })).toBe(
+        calculateAssistantConfigChecksum(base)
+      );
+    });
+
+    it('checksum changes when hide_tool_outputs is true', () => {
+      const base = buildAssistant({ name: 'Test' });
+
+      expect(calculateAssistantConfigChecksum({ ...base, hide_tool_outputs: true })).not.toBe(
+        calculateAssistantConfigChecksum(base)
+      );
     });
 
     it('should default to gpt-4 when no model specified', () => {

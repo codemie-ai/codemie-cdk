@@ -88,6 +88,18 @@ describe('converters', () => {
       });
     });
 
+    it('exports hide_tool_outputs only when true', () => {
+      const base = { id: 'ast-123', name: 'Test', llm_model_type: 'gpt-4' } as Assistant;
+
+      expect(assistantResponseToResource({ ...base, hide_tool_outputs: true } as Assistant).hide_tool_outputs).toBe(
+        true
+      );
+      expect(
+        'hide_tool_outputs' in assistantResponseToResource({ ...base, hide_tool_outputs: false } as Assistant)
+      ).toBe(false);
+      expect('hide_tool_outputs' in assistantResponseToResource(base)).toBe(false);
+    });
+
     it('should include conversation_starters when present', () => {
       const assistant: Assistant = {
         id: 'ast-123',
@@ -1076,6 +1088,16 @@ describe('converters', () => {
   });
 
   describe('assistantResourceToCreateParams', () => {
+    it('round-trips hide_tool_outputs: true from IaC to SDK', () => {
+      const result = assistantResourceToCreateParams(
+        { name: 'A', description: 'd', prompt: 'p.md', model: 'gpt-4', hide_tool_outputs: true },
+        'test-project',
+        'You are helpful'
+      ) as unknown as { hide_tool_outputs?: boolean };
+
+      expect(result.hide_tool_outputs).toBe(true);
+    });
+
     it('should convert basic assistant', () => {
       const assistant = {
         name: 'Test Assistant',

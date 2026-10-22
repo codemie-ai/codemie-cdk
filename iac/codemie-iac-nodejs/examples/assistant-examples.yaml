@@ -23,6 +23,7 @@
 #       top_p: 0.9                      # Optional: Top-p sampling
 #       shared: true                    # Optional: Share with project (default: true)
 #       is_react: true                  # Optional: Enable ReAct mode (default: true)
+#       hide_tool_outputs: false        # Optional: Show end users only the final response (default: false)
 #       is_global: false                # Optional: Global assistant (default: false)
 #       slug: my-assistant-slug         # Optional: URL-friendly identifier (auto-generated if not provided)
 #       icon_url: https://...           # Optional: Assistant avatar URL
@@ -54,6 +55,7 @@
 # - icon_url: string
 # - shared: boolean
 # - is_react: boolean
+# - hide_tool_outputs: boolean
 # - is_global: boolean
 # - slug: string
 # - temperature: number
@@ -495,6 +497,13 @@ react_assistant:
 #   - Enable ReAct (Reasoning + Acting) mode
 #   - Default: true
 #   - Useful for complex multi-step reasoning tasks
+#
+# hide_tool_outputs (OPTIONAL):
+#   - When true, end users see only the assistant's final response (tool outputs are hidden)
+#   - Default: false
+#   - The key is exported only when true
+#   - Removing the key from YAML does NOT turn it off on an existing assistant;
+#     set `hide_tool_outputs: false` explicitly to turn it off
 #
 # is_global (OPTIONAL):
 #   - Whether assistant is globally available (marketplace)
