@@ -1072,9 +1072,9 @@ describe('import.ts', () => {
           update: true,
         })
       ).rejects.toThrow(
-        'Cannot safely update "Test Assistant" inside configs/imported-resources/assistants/team.yaml: ' +
+        `Cannot safely update "Test Assistant" inside ${path.join('configs', 'imported-resources', 'assistants', 'team.yaml')}: ` +
           'its entry is indented by 4 spaces instead of 2. ' +
-          'Update configs/imported-resources/assistants/team.yaml manually.'
+          `Update ${path.join('configs', 'imported-resources', 'assistants', 'team.yaml')} manually.`
       );
 
       expect(fs.readFileSync(listFilePath, 'utf8')).toBe(listContent);

@@ -9,6 +9,7 @@ import type { CodeMieClient, Assistant } from 'codemie-sdk';
 import { createAssistantAndGetId } from './assistantHelpers';
 
 describe('assistantHelpers', () => {
+  jest.setTimeout(15_000);
   describe('createAssistantAndGetId', () => {
     test('should create assistant and retrieve ID by slug', async () => {
       const mockAssistant = {

@@ -131,6 +131,101 @@ describe('deployAssistants', () => {
     expect(state.getAssistantState('A1')).toBeDefined();
   });
 
+  it.each([
+    false,
+    true,
+  ])('does not recover or write state after create validation fails (stale state: %s)', async (stale) => {
+    const cfg = baseConfig();
+    const assistant: AssistantResource = {
+      name: 'Rejected',
+      description: 'desc',
+      prompt: 'system_prompts/rejected.md',
+      model: 'gpt-4',
+    };
+    fs.writeFileSync(path.join(dir, assistant.prompt), 'NEW_PROMPT');
+    cfg.resources.assistants = [assistant];
+    if (stale) {
+      state.updateAssistantState(assistant.name, 'old-id', 'OLD_PROMPT', assistant);
+    }
+    const before = state.getAssistantState(assistant.name);
+    if (stale) {
+      (client.assistants.get as jest.Mock).mockRejectedValue(
+        Object.assign(new Error('Not found'), { statusCode: 404 })
+      );
+    }
+    (client.assistants.create as jest.Mock).mockResolvedValue({
+      validation: { has_missing_integrations: true, message: 'Configure tools' },
+    });
+    const stats = await deployAssistants(cfg, client, loader, state);
+    expect(stats).toEqual({ created: 0, updated: 0, unchanged: 0, failed: 1 });
+    expect(state.getAssistantState(assistant.name)).toEqual(before);
+    expect(client.assistants.list).not.toHaveBeenCalled();
+    expect(client.assistants.update).not.toHaveBeenCalled();
+  });
+
+  it.each([400, 401, 403, 422])('does not perform recovery lookup after HTTP %i', async (statusCode) => {
+    const cfg = baseConfig();
+    const assistant: AssistantResource = {
+      name: 'Rejected request',
+      description: 'desc',
+      prompt: 'system_prompts/rejected.md',
+      model: 'gpt-4',
+    };
+    fs.writeFileSync(path.join(dir, assistant.prompt), 'PROMPT');
+    cfg.resources.assistants = [assistant];
+    (client.assistants.create as jest.Mock).mockRejectedValue(
+      Object.assign(new Error('Rejected'), { statusCode, response: { detail: 'Original error' } })
+    );
+    const stats = await deployAssistants(cfg, client, loader, state);
+    expect(stats.failed).toBe(1);
+    expect(state.getAssistantState(assistant.name)).toBeUndefined();
+    expect(client.assistants.list).not.toHaveBeenCalled();
+    expect(client.assistants.update).not.toHaveBeenCalled();
+  });
+
+  it('does not record a rejected update as synchronized', async () => {
+    const cfg = baseConfig();
+    const assistant: AssistantResource = {
+      name: 'Rejected update',
+      description: 'desc',
+      prompt: 'system_prompts/rejected.md',
+      model: 'gpt-4',
+    };
+    fs.writeFileSync(path.join(dir, assistant.prompt), 'NEW_PROMPT');
+    cfg.resources.assistants = [assistant];
+    state.updateAssistantState(assistant.name, 'existing-id', 'OLD_PROMPT', assistant);
+    const before = state.getAssistantState(assistant.name);
+    (client.assistants.get as jest.Mock).mockResolvedValue({ id: 'existing-id' });
+    (client.assistants.update as jest.Mock).mockResolvedValue({
+      validation: { has_missing_integrations: true, message: 'Configure tools' },
+    });
+    const stats = await deployAssistants(cfg, client, loader, state);
+    expect(stats.failed).toBe(1);
+    expect(stats.updated).toBe(0);
+    expect(state.getAssistantState(assistant.name)).toEqual(before);
+  });
+
+  it('does not write state after a recovered assistant rejects its update', async () => {
+    const cfg = baseConfig();
+    const assistant: AssistantResource = {
+      name: 'Rejected recovery',
+      description: 'desc',
+      prompt: 'system_prompts/rejected.md',
+      model: 'gpt-4',
+    };
+    fs.writeFileSync(path.join(dir, assistant.prompt), 'PROMPT');
+    cfg.resources.assistants = [assistant];
+    (client.assistants.create as jest.Mock).mockRejectedValue(
+      Object.assign(new Error('Already exists'), { statusCode: 409 })
+    );
+    (client.assistants.list as jest.Mock).mockResolvedValue([{ id: 'existing-id', name: assistant.name }]);
+    (client.assistants.update as jest.Mock).mockResolvedValue({ validation: { has_missing_integrations: true } });
+    const stats = await deployAssistants(cfg, client, loader, state);
+    expect(stats.failed).toBe(1);
+    expect(stats.updated).toBe(0);
+    expect(state.getAssistantState(assistant.name)).toBeUndefined();
+  });
+
   it('should update assistant when prompt content changed', async () => {
     const cfg = baseConfig();
     const assistant: AssistantResource = {
