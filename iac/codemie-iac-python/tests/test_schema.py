@@ -40,3 +40,10 @@ def test_malformed_document_names_json_path():
     with pytest.raises(DocumentValidationError) as exc:
         validate_document(bad)
     assert "meta" in exc.value.json_path
+
+
+def test_assistant_schema_lists_deselected_default_tools_as_optional():
+    schema = document_json_schema()
+    assistant = schema["$defs"]["AssistantSpec"]
+    assert "deselected_default_tools" in assistant["properties"]
+    assert "deselected_default_tools" not in assistant.get("required", [])
