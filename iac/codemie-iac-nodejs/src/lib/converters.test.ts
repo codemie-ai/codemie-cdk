@@ -30,12 +30,18 @@ describe('converters', () => {
       };
 
       it('includes the list when non-empty', () => {
-        const result = assistantResponseToResource({ ...base, deselected_default_tools: ['search_kb'] } as unknown as Assistant);
+        const result = assistantResponseToResource({
+          ...base,
+          deselected_default_tools: ['search_kb'],
+        } as unknown as Assistant);
         expect(result).toHaveProperty('deselected_default_tools', ['search_kb']);
       });
 
       it.each([[[]], [undefined], [null]])('omits the key for %p', (value) => {
-        const result = assistantResponseToResource({ ...base, deselected_default_tools: value } as unknown as Assistant);
+        const result = assistantResponseToResource({
+          ...base,
+          deselected_default_tools: value,
+        } as unknown as Assistant);
         expect(result).not.toHaveProperty('deselected_default_tools');
       });
     });
