@@ -283,7 +283,18 @@ automatically.
 `AssistantSpec.deselected_default_tools` lists default datasource tools to
 switch off (`get_repository_file_tree`, `search_code_repo`, `search_kb`).
 Empty or absent means all default tools are on, and the key is omitted from
-the YAML when the list is empty. The field is declared locally and read from
+the YAML when the list is empty:
+
+```python
+spec = AssistantSpec.from_entity(assistant)
+spec.deselected_default_tools = [
+    "get_repository_file_tree",
+    "search_code_repo",
+    "search_kb",
+]
+```
+
+The field is declared locally and read from
 the request with `getattr`; raise the `codemie-sdk-python` floor once a
 release ships `deselected_default_tools`.
 
