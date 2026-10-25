@@ -85,7 +85,7 @@ can carry or reference a secret:
 
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from codemie_sdk.models.assistant import (
     AssistantCreateRequest,
@@ -376,6 +376,9 @@ class AssistantSpec(BaseModel):
     genuine, user-settable, persisted field (see module docstring), not
     platform-computed; dropping it silently loses an assistant's configured
     tool-output token limit on round-trip.
+
+    ``deselected_default_tools`` is a locally declared field (not yet in the
+    SDK) and is omitted from the dump when empty.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -403,6 +406,20 @@ class AssistantSpec(BaseModel):
     prompt_variables: list[PromptVariableSpec] = Field(default_factory=list)
     skip_integration_validation: bool | None = False
     tool_permissions: ToolPermissionsConfigSpec | None = None
+    # Default tools switched off for this assistant (get_repository_file_tree,
+    # search_code_repo, search_kb). Declared locally: the pinned
+    # codemie-sdk-python does not expose it yet.
+    # TODO: raise the codemie-sdk-python floor once a release ships
+    # ``deselected_default_tools`` on ``AssistantRequestBase``.
+    deselected_default_tools: list[str] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def _omit_empty_deselected_default_tools(self, handler):
+        # Empty means "not set": keep the dump of legacy specs unchanged.
+        data = handler(self)
+        if not data.get("deselected_default_tools"):
+            data.pop("deselected_default_tools", None)
+        return data
 
     @classmethod
     def from_entity(cls, request: AssistantCreateRequest) -> "AssistantSpec":
@@ -438,5 +455,8 @@ class AssistantSpec(BaseModel):
                 ToolPermissionsConfigSpec.from_entity(request.tool_permissions)
                 if request.tool_permissions is not None
                 else None
+            ),
+            deselected_default_tools=list(
+                getattr(request, "deselected_default_tools", None) or []
             ),
         )
