@@ -1097,6 +1097,29 @@ describe('converters', () => {
   });
 
   describe('assistantResourceToCreateParams', () => {
+    describe('deselected_default_tools pass-through', () => {
+      const base = { name: 'T', description: 'T', prompt: 'p.md', model: 'gpt-4' };
+
+      it('sends a non-empty list', () => {
+        const result = assistantResourceToCreateParams(
+          { ...base, deselected_default_tools: ['search_kb', 'search_code_repo'] },
+          'proj',
+          'x'
+        );
+        expect(result).toHaveProperty('deselected_default_tools', ['search_kb', 'search_code_repo']);
+      });
+
+      it('sends an explicit empty list as []', () => {
+        const result = assistantResourceToCreateParams({ ...base, deselected_default_tools: [] }, 'proj', 'x');
+        expect(result).toHaveProperty('deselected_default_tools', []);
+      });
+
+      it('omits the key when absent (no defaulting)', () => {
+        const result = assistantResourceToCreateParams(base, 'proj', 'x');
+        expect(result).not.toHaveProperty('deselected_default_tools');
+      });
+    });
+
     it('should convert basic assistant', () => {
       const assistant = {
         name: 'Test Assistant',
