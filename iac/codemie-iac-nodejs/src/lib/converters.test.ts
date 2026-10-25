@@ -19,6 +19,27 @@ import { logger } from './logger';
 
 describe('converters', () => {
   describe('assistantResponseToResource', () => {
+    describe('deselected_default_tools', () => {
+      const base = {
+        id: 'ast-1',
+        name: 'A',
+        description: 'd',
+        llm_model_type: 'gpt-4',
+        system_prompt: 'p',
+        slug: 'a',
+      };
+
+      it('includes the list when non-empty', () => {
+        const result = assistantResponseToResource({ ...base, deselected_default_tools: ['search_kb'] } as unknown as Assistant);
+        expect(result).toHaveProperty('deselected_default_tools', ['search_kb']);
+      });
+
+      it.each([[[]], [undefined], [null]])('omits the key for %p', (value) => {
+        const result = assistantResponseToResource({ ...base, deselected_default_tools: value } as unknown as Assistant);
+        expect(result).not.toHaveProperty('deselected_default_tools');
+      });
+    });
+
     it('should convert basic assistant', () => {
       const assistant: Assistant = {
         id: 'ast-123',
