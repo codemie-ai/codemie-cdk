@@ -1,0 +1,5 @@
+# SDLC Factory working files
+docs/superpowers/tasks/*/**/*.local.*
+docs/superpowers/tasks/*/**/*.local/
+docs/superpowers/tasks/*/**/task-*-brief.md
+docs/superpowers/tasks/*/**/task-*-report.md
