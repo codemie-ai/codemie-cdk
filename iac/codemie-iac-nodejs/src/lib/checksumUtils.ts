@@ -184,6 +184,11 @@ export function normalizeAssistantConfig(assistant: AssistantResource, buildConf
     sub_assistants: assistant.sub_assistants || [],
     skills: assistant.skills || [],
     conversation_starters: assistant.conversation_starters || [],
+    // Only when non-empty, so legacy checksums stay identical (undefined is dropped by JSON.stringify)
+    ...(assistant.deselected_default_tools &&
+      assistant.deselected_default_tools.length > 0 && {
+        deselected_default_tools: [...new Set(assistant.deselected_default_tools)].sort(),
+      }),
     buildConfig,
   };
 }
