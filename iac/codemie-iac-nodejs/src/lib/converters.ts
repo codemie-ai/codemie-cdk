@@ -179,6 +179,9 @@ export function assistantResponseToResource(assistant: AssistantResponse): Assis
 
   const categories = assistant.categories?.map((category) => category.id);
 
+  // Not in the pinned SDK types yet: read it from the raw response. Empty/absent means "not set".
+  const deselectedDefaultTools = (assistant as { deselected_default_tools?: string[] | null }).deselected_default_tools;
+
   return {
     name: assistant.name || safeName,
     description: assistant.description || '',
@@ -198,6 +201,8 @@ export function assistantResponseToResource(assistant: AssistantResponse): Assis
     ...(subAssistants && { sub_assistants: subAssistants }),
     ...(assistant.prompt_variables && { prompt_variables: assistant.prompt_variables }),
     ...(categories && { categories }),
+    ...(deselectedDefaultTools &&
+      deselectedDefaultTools.length > 0 && { deselected_default_tools: deselectedDefaultTools }),
   };
 }
 
