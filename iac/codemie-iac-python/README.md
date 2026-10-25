@@ -280,6 +280,14 @@ server's `auth_token` becomes a `CredentialRef` keyed by that server's own
 name — the same narrowing shown in the Integration example, just applied
 automatically.
 
+`AssistantSpec.deselected_default_tools` lists default datasource tools to
+switch off (`get_repository_file_tree`, `search_code_repo`, `search_kb`).
+Empty or absent means all default tools are on, and the key is omitted from
+the YAML when the list is empty. The field is declared locally and read from
+the request with `getattr`; raise the `codemie-sdk-python` floor once a
+release ships `deselected_default_tools`.
+
+
 ### Workflow
 
 A workflow is built with the SDK's own `WorkflowBuilder`, not hand-filled
