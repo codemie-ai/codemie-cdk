@@ -130,7 +130,7 @@ No network call is made — the schema ships inside the package.
 ### Credentials are references, never values
 
 A credential field never holds a secret. It holds a reference such as
-`env:JIRA_PROD_API_TOKEN`, built by `CredentialRef.from_entity(identifier,
+`env:JIRA_PROD_TOKEN`, built by `CredentialRef.from_entity(identifier,
 credential_key)`. That function never reads the real secret value — only the
 identifier and the key — so the same two inputs always produce the same
 reference. See the Integration example below for it in context.
@@ -217,7 +217,11 @@ integration = Integration(
     project_name="my-project",
     alias="jira-prod",
     credential_type=CredentialTypes.JIRA,
-    credential_values=[CredentialValues(key="api_token", value="<kept out of the document>")],
+    credential_values=[
+        CredentialValues(key="url", value="https://jira.example.com"),
+        CredentialValues(key="username", value="<kept out of the document>"),
+        CredentialValues(key="token", value="<kept out of the document>"),
+    ],
 )
 
 doc = Document(
@@ -227,6 +231,21 @@ doc = Document(
 )
 print(to_yaml(Bundle([doc])))
 ```
+
+**A credential `key` must be the platform's own setting name.** The package
+does not check keys: an unknown key is stored as written, and the platform then
+shows the setting as empty and the tool fails at runtime. Some types use
+prefixed names, for example:
+
+| `credential_type` | Keys |
+|---|---|
+| `Jira` | `url`, `username`, `token`, `cloud` |
+| `Git` | `url`, `token` |
+| `Elastic` | `url`, `elastic_api_key_id`, `elastic_api_key` |
+| `OpenAPI` | `openapi_spec`, `openapi_api_key`, `openapi_username`, `is_basic_auth`, `timeout`, `auth_header_name` |
+
+The reference for a key is `env:<ALIAS>_<KEY>`, upper-cased with `-` turned
+into `_` (`openapi-answers` + `openapi_spec` is `env:OPENAPI_ANSWERS_OPENAPI_SPEC`).
 
 ### Datasource
 
@@ -613,7 +632,7 @@ value are stripped, `${}` is not expanded, and lines with an invalid key are
 skipped. Variables already set in the real environment always win; `.env` only
 fills in unset ones (nothing is written to `os.environ`). `${NAME}` references
 in `codemie.yaml` see the merged values, and so do `env:NAME` credential references
-in `apply` (so a secret like `JIRA_PROD_API_TOKEN` can live in `.env`).
+in `apply` (so a secret like `JIRA_PROD_TOKEN` can live in `.env`).
 
 Exit codes: 0 success / nothing to do, 1 changes pending, 2 apply failed,
 3 unresolved input, 4 config error, 5 invalid document.
@@ -696,6 +715,7 @@ Simple (one per asset type):
 - [`simple/category.yaml`](examples/simple/category.yaml)
 - [`simple/datasource.yaml`](examples/simple/datasource.yaml)
 - [`simple/integration.yaml`](examples/simple/integration.yaml)
+- [`simple/integration_openapi.yaml`](examples/simple/integration_openapi.yaml) (prefixed credential keys)
 - [`simple/skill.yaml`](examples/simple/skill.yaml)
 - [`simple/workflow.yaml`](examples/simple/workflow.yaml)
 
