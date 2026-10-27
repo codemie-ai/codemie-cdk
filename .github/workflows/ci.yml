@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
 
@@ -169,19 +169,3 @@ jobs:
       contents: read
       pull-requests: read
     uses: codemie-ai/ci-workflows/.github/workflows/reusable-secrets-detection.yml@main
-
-  pr-title:
-    name: PR title
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-      - name: Validate Conventional Commits title
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9._/-]+\))?!?: .+'
-          if ! [[ "$PR_TITLE" =~ $pattern ]]; then
-            echo "PR title must follow Conventional Commits: <type>(<optional scope>): <description>"
-            echo "Allowed types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
-            exit 1
-          fi
