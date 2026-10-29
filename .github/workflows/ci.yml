@@ -153,15 +153,9 @@ jobs:
 
   internal-refs:
     name: Internal references
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Scan for internal references
-        run: python3 scripts/scan_internal_refs.py --tree .
+    permissions:
+      contents: read
+    uses: codemie-ai/ci-workflows/.github/workflows/reusable-internal-refs-scan.yml@main
 
   secrets-detection:
     name: Security
