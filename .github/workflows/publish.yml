@@ -80,8 +80,8 @@ jobs:
 
       - name: Download version check script
         run: |
-          mkdir -p scripts/release
-          curl -fsSL "https://raw.githubusercontent.com/codemie-ai/ci-workflows/${{ env.CI_WORKFLOWS_REF }}/scripts/release/check_version.py" -o scripts/release/check_version.py
+          mkdir -p "$RUNNER_TEMP/scripts/release"
+          curl -fsSL "https://raw.githubusercontent.com/codemie-ai/ci-workflows/${{ env.CI_WORKFLOWS_REF }}/scripts/release/check_version.py" -o "$RUNNER_TEMP/scripts/release/check_version.py"
 
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -95,7 +95,7 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           BASE=$(node -p "require('./package.json').version")
-          VERSION=$(python3 "$GITHUB_WORKSPACE/scripts/release/check_version.py" --ecosystem npm --name @codemieai/cdk --tag "$RELEASE_TAG" --base "$BASE" --tag-prefix cdk-v)
+          VERSION=$(python3 "$RUNNER_TEMP/scripts/release/check_version.py" --ecosystem npm --name @codemieai/cdk --tag "$RELEASE_TAG" --base "$BASE" --tag-prefix cdk-v)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing @codemieai/cdk $VERSION" >> "$GITHUB_STEP_SUMMARY"
 
@@ -123,7 +123,7 @@ jobs:
       - name: Check version against npm
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: python3 "$GITHUB_WORKSPACE/scripts/release/check_version.py" --ecosystem npm --name @codemieai/cdk --version "$VERSION"
+        run: python3 "$RUNNER_TEMP/scripts/release/check_version.py" --ecosystem npm --name @codemieai/cdk --version "$VERSION"
 
       - name: Pack tarball
         run: mkdir -p "$RUNNER_TEMP/pack" && npm pack --pack-destination "$RUNNER_TEMP/pack" && cp "$RUNNER_TEMP"/pack/*.tgz "$GITHUB_WORKSPACE/"
