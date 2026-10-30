@@ -43,6 +43,27 @@ describe('logApiErrorDetails', () => {
     expect(mockedLogger.error).toHaveBeenCalledWith('     plain failure');
   });
 
+  it('prints safe request context and redacts sensitive response fields', () => {
+    const error = Object.assign(new Error('Rejected'), {
+      statusCode: 404,
+      response: { detail: 'Missing integration', credentials: { password: 'private', access_token: 'private' } },
+      request: {
+        method: 'POST',
+        path: '/v1/assistants',
+        requestId: 'request-123',
+        headers: { Authorization: 'private' },
+      },
+    });
+    logApiErrorDetails(error);
+    const output = mockedLogger.error.mock.calls.map(([entry]) => String(entry)).join('\n');
+    expect(output).toContain('Status: 404');
+    expect(output).toContain('POST /v1/assistants');
+    expect(output).toContain('request-123');
+    expect(output).toContain('Missing integration');
+    expect(output).toContain('[REDACTED]');
+    expect(output).not.toContain('private');
+  });
+
   it('logs String(error) for a non-Error value', () => {
     logApiErrorDetails('something odd');
 

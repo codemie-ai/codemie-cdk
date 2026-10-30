@@ -330,9 +330,9 @@ describe('skill path helpers', () => {
 
 describe('resolvePathWithinDirectory', () => {
   it('resolves a plain relative path inside the directory', () => {
-    expect(resolvePathWithinDirectory('/base/dir', 'reference.md')).toBe(path.join('/base/dir', 'reference.md'));
+    expect(resolvePathWithinDirectory('/base/dir', 'reference.md')).toBe(path.resolve('/base/dir', 'reference.md'));
     expect(resolvePathWithinDirectory('/base/dir', 'docs/deep/reference.md')).toBe(
-      path.join('/base/dir', 'docs/deep/reference.md')
+      path.resolve('/base/dir', 'docs/deep/reference.md')
     );
   });
 

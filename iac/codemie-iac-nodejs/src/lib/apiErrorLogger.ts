@@ -6,6 +6,17 @@
  */
 import { logger } from './logger';
 
+function diagnosticJson(value: unknown): string | undefined {
+  return JSON.stringify(
+    value,
+    (key, entry: unknown) =>
+      /authorization|cookie|password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token/i.test(key)
+        ? '[REDACTED]'
+        : entry,
+    2
+  );
+}
+
 /**
  * Log the details of a failed API call in a consistent shape.
  *
@@ -18,12 +29,26 @@ export function logApiErrorDetails(error: unknown): void {
     logger.debug(`     Stack:`, error.stack);
     // Handle SDK ApiError (uses statusCode + response, not Axios response.status/data)
     if ('statusCode' in error) {
-      logger.error(`     Status: ${String(error.statusCode)}`);
-      logger.error(`     Data: ${JSON.stringify('response' in error ? error.response : undefined, null, 2)}`);
+      if (error.statusCode !== undefined) {
+        logger.error(`     Status: ${String(error.statusCode)}`);
+      }
+      logger.error(`     Data: ${diagnosticJson('response' in error ? error.response : undefined)}`);
+      if ('request' in error && typeof error.request === 'object' && error.request !== null) {
+        const request = error.request as Record<string, unknown>;
+        if (typeof request.method === 'string' && typeof request.path === 'string') {
+          logger.error(`     Request: ${request.method} ${request.path}`);
+        }
+        if (typeof request.requestId === 'string') {
+          logger.error(`     Request ID: ${request.requestId}`);
+        }
+        if (typeof request.code === 'string') {
+          logger.error(`     Code: ${request.code}`);
+        }
+      }
     } else if ('response' in error) {
       const axiosError = error as { response: { status: number; data: unknown } };
       logger.error(`     Status: ${axiosError.response?.status}`);
-      logger.error(`     Data: ${JSON.stringify(axiosError.response?.data, null, 2)}`);
+      logger.error(`     Data: ${diagnosticJson(axiosError.response?.data)}`);
     }
   } else {
     logger.error(`     ${String(error)}`);

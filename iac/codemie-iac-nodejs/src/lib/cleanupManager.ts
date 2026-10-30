@@ -36,6 +36,9 @@ export class CleanupManager {
    * Handles both proper 404 responses
    */
   private isNotFoundError(error: unknown): boolean {
+    if (typeof error === 'object' && error !== null && 'statusCode' in error && typeof error.statusCode === 'number') {
+      return error.statusCode === 404;
+    }
     const errorMessage = error instanceof Error ? error.message : String(error);
 
     // Check for explicit 404 or "not found" messages
