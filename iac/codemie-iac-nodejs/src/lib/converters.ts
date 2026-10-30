@@ -189,6 +189,9 @@ export function assistantResponseToResource(assistant: AssistantResponse): Assis
     ...(assistant.top_p !== undefined && assistant.top_p !== null && { top_p: assistant.top_p }),
     ...(assistant.shared !== undefined && { shared: assistant.shared }),
     ...(assistant.is_react !== undefined && { is_react: assistant.is_react }),
+    ...((assistant as AssistantResponse & { hide_tool_outputs?: boolean }).hide_tool_outputs === true && {
+      hide_tool_outputs: true,
+    }),
     ...(assistant.is_global !== undefined && { is_global: assistant.is_global }),
     ...(assistant.icon_url && { icon_url: assistant.icon_url }),
     ...(assistant.conversation_starters && { conversation_starters: assistant.conversation_starters }),
