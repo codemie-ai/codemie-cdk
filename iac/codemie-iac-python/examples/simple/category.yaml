@@ -1,0 +1,9 @@
+# Category: a label that assistants can reference by name in `categories`.
+---
+version: v1
+meta:
+  kind: category
+  name: support
+spec:
+  name: support
+  description: Support team resources
