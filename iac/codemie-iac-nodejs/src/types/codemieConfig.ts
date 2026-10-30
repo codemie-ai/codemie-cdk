@@ -152,6 +152,10 @@ export interface AssistantResource
   datasource_names?: string[]; // Datasource names (resolved → context entries during deployment)
   categories?: string[]; // Assistant categories (array of category names)
   skills?: string[]; // Skill NAMES (resolved → skill_ids during deployment)
+  // Default tools switched off for this assistant (get_repository_file_tree, search_code_repo, search_kb).
+  // Declared locally because the pinned codemie-sdk types do not expose it yet.
+  // TODO: raise the codemie-sdk floor and drop this once a release ships `deselected_default_tools`.
+  deselected_default_tools?: string[];
 }
 
 /**

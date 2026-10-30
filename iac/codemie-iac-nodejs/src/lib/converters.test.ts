@@ -19,6 +19,33 @@ import { logger } from './logger';
 
 describe('converters', () => {
   describe('assistantResponseToResource', () => {
+    describe('deselected_default_tools', () => {
+      const base = {
+        id: 'ast-1',
+        name: 'A',
+        description: 'd',
+        llm_model_type: 'gpt-4',
+        system_prompt: 'p',
+        slug: 'a',
+      };
+
+      it('includes the list when non-empty', () => {
+        const result = assistantResponseToResource({
+          ...base,
+          deselected_default_tools: ['search_kb'],
+        } as unknown as Assistant);
+        expect(result).toHaveProperty('deselected_default_tools', ['search_kb']);
+      });
+
+      it.each([[[]], [undefined], [null]])('omits the key for %p', (value) => {
+        const result = assistantResponseToResource({
+          ...base,
+          deselected_default_tools: value,
+        } as unknown as Assistant);
+        expect(result).not.toHaveProperty('deselected_default_tools');
+      });
+    });
+
     it('should convert basic assistant', () => {
       const assistant: Assistant = {
         id: 'ast-123',
@@ -1076,6 +1103,29 @@ describe('converters', () => {
   });
 
   describe('assistantResourceToCreateParams', () => {
+    describe('deselected_default_tools pass-through', () => {
+      const base = { name: 'T', description: 'T', prompt: 'p.md', model: 'gpt-4' };
+
+      it('sends a non-empty list', () => {
+        const result = assistantResourceToCreateParams(
+          { ...base, deselected_default_tools: ['search_kb', 'search_code_repo'] },
+          'proj',
+          'x'
+        );
+        expect(result).toHaveProperty('deselected_default_tools', ['search_kb', 'search_code_repo']);
+      });
+
+      it('sends an explicit empty list as []', () => {
+        const result = assistantResourceToCreateParams({ ...base, deselected_default_tools: [] }, 'proj', 'x');
+        expect(result).toHaveProperty('deselected_default_tools', []);
+      });
+
+      it('omits the key when absent (no defaulting)', () => {
+        const result = assistantResourceToCreateParams(base, 'proj', 'x');
+        expect(result).not.toHaveProperty('deselected_default_tools');
+      });
+    });
+
     it('should convert basic assistant', () => {
       const assistant = {
         name: 'Test Assistant',
