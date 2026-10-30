@@ -4,8 +4,10 @@ A small Python package that turns CodeMie resources (assistants, datasources,
 integrations, skills, categories, workflows) into plain YAML documents you can
 commit to a repo, and reads those documents back.
 
-It does not talk to the CodeMie platform. Everything here works offline, with
-no network and no running backend.
+Most of the library works offline, with no network and no running backend. The
+one exception is `codemie_iac.plan_apply`, which talks to the platform, and only
+through the `codemie_sdk` services (see "Plan and apply against the platform"
+below). Nothing else in the package makes a network call.
 
 ## Why this exists
 
@@ -36,15 +38,16 @@ blocks for that YAML instead, plus two safety rules baked in:
 - Write a `Bundle` to YAML and read it back, byte-for-byte stable.
 - Validate a YAML document against a packaged JSON Schema, offline.
 - Resolve a reference like "the integration named X" within a bundle.
+- Create a whole bundle on the platform, in dependency order, and plan or
+  apply a single document against one existing entity
+  (`codemie_iac.plan_apply`).
 
 ## What it can't do yet
 
 - No command-line tool. This is a library you import, not something you run
   from a terminal (a CLI is planned for a later release).
-- No `plan` / `apply`. Nothing here creates or updates anything on the
-  platform.
-- No reading credentials from the environment. That also comes later, as part
-  of `apply`.
+- `apply` never deletes anything, and bulk apply only creates. See "Plan and
+  apply against the platform" and "Not supported" below.
 
 ## Install
 
@@ -314,7 +317,7 @@ print(to_yaml(Bundle([doc])))
 itself — nothing is copied onto a sibling field, so nothing can drift out of
 sync with it. The platform's own flattened `yaml_config` text
 (`workflow.to_yaml_config()`) is not generated here at all; that happens
-later, whenever a future `apply` step actually publishes the workflow.
+later, when `plan_apply` publishes the workflow.
 
 **Credential narrowing for inline MCP servers.** An inline assistant's MCP
 server config (`WorkflowMCPServer.config`) is typed `MCPServerConfig` — the
@@ -332,6 +335,121 @@ rejected. The `env`/`headers`/`args`/`url` fields are not: as noted above,
 narrowing them is a best-effort, whole-value match, never an enforced
 guarantee.
 
+## Plan and apply against the platform
+
+`codemie_iac.plan_apply` is the only part of this package that talks to the
+platform. It does so by calling `codemie_sdk` services (you pass in the SDK
+client); the rest of the library stays offline. Ground rules:
+
+- **Platform ids are passed in and returned, never stored.** A document never
+  contains a platform id and nothing is written to a file. Ids are held in
+  memory for one run, substituted into request bodies, and handed back in the
+  result.
+- **Apply never deletes anything.** Not in bulk, not for a single entity.
+- **Bulk apply is create-only and dependency-ordered.** An entity whose name
+  or content equals an existing one is still created; there is no dedupe, no
+  update, and no scoped apply. All checks (dependency cycles, unsupported
+  kinds, unresolved references, unresolvable credentials) run before the first
+  write, so a bad bundle fails without creating anything.
+- **Single-entity plan/apply works by id.** You give the id of the live
+  entity; `plan` diffs the document against it with no writes, and `apply`
+  updates it (or creates it when no id is given).
+- Credential references (`env:NAME`) are resolved from the environment at
+  apply time (`plan` does not need them: an unset variable is reported as an
+  unresolvable `CannotCompare`). Masked live values are reported as
+  `CannotCompare`, never as a difference, and no secret value appears in any
+  result.
+- **An empty plan sends no write.** Fields that cannot be compared (a rotated
+  secret, a masked value) do not make a plan non-empty; `apply` lists them in
+  `ApplyResult.uncomparable`. Pass `force=True` to write the full document
+  anyway, e.g. to rotate a secret.
+- **A document's `meta.name` must equal the entity's own name** (the spec
+  `name`, the workflow's `name`, or the integration's `alias`). References and
+  the live lookup go by `meta.name`, while the platform uses the spec name, so
+  a difference is refused with `name_mismatch` before anything is written.
+- **Updates avoid needless reindexing.** A code datasource whose plan differs
+  only in metadata (description, visibility, schedule) is updated with
+  `skip_reindex`. A Git FAQ datasource with a changed source field (`link`,
+  `branch`, `files_filter`, `setting_id`) is sent whole with `full_reindex`;
+  otherwise its source fields are left out, because the backend rejects them
+  without a full reindex. `force=True` writes everything and reindexes.
+- **Rejected calls are scrubbed.** A platform rejection (the SDK raises
+  `requests.HTTPError`) becomes a `PlatformRejectionError` holding only the
+  status, a scrubbed message and the parsed field errors; the original
+  exception, whose request holds the resolved credentials, is not kept.
+  Secrets are also replaced in their JSON-escaped, URL-encoded and base64
+  forms. The SDK itself logs request bodies at `DEBUG` level, credentials
+  included, so keep the `codemie_sdk` logger above `DEBUG` while applying.
+
+```python
+from codemie_sdk import CodeMieClient
+from codemie_iac import from_yaml
+from codemie_iac.plan_apply import BulkCreator, SingleEntityPlanner
+
+client = CodeMieClient(...)          # your usual SDK client
+bundle = from_yaml(open("bundle.yaml").read())
+
+# Create everything in the bundle, dependencies first.
+report = BulkCreator(client).create_all(bundle, target="my-project")
+for item in report.created:
+    print(item.kind, item.name, item.id)   # ids come back to you
+if report.failed:                           # stops at the first failure
+    print(report.failed.error_type, report.failed.reason)
+
+# One entity, by id.
+planner = SingleEntityPlanner(client)
+document = next(iter(bundle))
+plan = planner.plan(document, entity_id="<platform id>", target="my-project")
+for d in plan.differences:
+    print(d.field, d.document_value, d.live_value)
+if not plan.is_empty:
+    result = planner.apply(document, entity_id="<platform id>", target="my-project")
+    print(result.id, result.created)
+```
+
+`target` is the project the entities live in. Failures raise or report an
+`ApplyError` (`PlatformRejectionError`, `UnresolvedReferenceError`,
+`UnresolvableCredentialError`) that names the entity kind and name.
+
+## Not supported
+
+Some things are refused up front, with a clear error, before anything is
+written.
+
+**A datasource cannot be renamed or moved to another project.** If the
+document's datasource name or project differs from the live datasource you
+point `plan`/`apply` at, you get:
+
+```
+datasource/<name>: renaming or moving a datasource is not supported: document is '<name>' in project '<project>', live is '<live name>' in project '<live project>'
+```
+
+(error type `datasource_identity_mismatch`). Instead, create a new datasource
+with the new name or project, then update the assistants that use the old one
+so they point at the new one.
+
+**File datasources cannot be created or updated.** A document carries no file
+content, so there is nothing to upload. You get:
+
+```
+datasource/<name>: datasource type 'knowledge_base_file': file datasources are not supported
+```
+
+(error type `unsupported_datasource_type`). In a bulk run this is caught
+before the first write, so nothing is created.
+
+**Some datasource types are not available.** The IaC datasource spec has no
+SVN, SharePoint, Xray or provider-route variants, so such documents cannot be
+written and have no create/update path. A datasource's `setting_id` is read
+as the alias of an integration (in the bundle or live in the target project)
+and replaced by its platform id on write.
+
+**An entity in another project is never overwritten.** Planning or applying an
+update to an entity whose live project differs from the target fails with
+`project_mismatch` (for a datasource it is `datasource_identity_mismatch`, see
+above), and so does a document (assistant, skill, integration, datasource)
+whose own project is not the target, in single apply and in bulk preflight.
+
 ## Where things live
 
 ```
@@ -342,4 +460,5 @@ src/codemie_iac/
   serializer.py      # to_yaml / from_yaml
   schema.py          # document_json_schema, validate_document
   specs/             # one Spec class per resource kind
+  plan_apply/        # bulk create and single-entity plan/apply (uses codemie_sdk)
 ```

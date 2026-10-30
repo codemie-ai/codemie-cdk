@@ -21,6 +21,7 @@ mixing different ``kind``s) that round-trips through ``model_dump``.
 """
 
 from enum import Enum
+from typing import Union, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, RootModel, TypeAdapter, model_validator
 
@@ -59,6 +60,23 @@ _SPEC_BY_KIND = {
     DocumentKind.CATEGORY: CategorySpec,
     DocumentKind.WORKFLOW: WorkflowSpec,
 }
+
+
+def _spec_classes(spec_type) -> tuple[type, ...]:
+    """Concrete spec classes behind a ``_SPEC_BY_KIND`` entry.
+
+    ``isinstance`` rejects a subscripted generic, and ``DatasourceSpec`` is an
+    ``Annotated[Union[...]]`` of per-type specs, so unwrap it into the plain
+    member classes. A plain class unwraps to itself.
+    """
+    if get_origin(spec_type) is Union:
+        return tuple(
+            cls for member in get_args(spec_type) for cls in _spec_classes(member)
+        )
+    args = get_args(spec_type)
+    if args:  # Annotated[X, ...] -> its first argument is the wrapped type
+        return _spec_classes(args[0])
+    return (spec_type,)
 
 
 class DocumentMeta(BaseModel):
@@ -138,10 +156,12 @@ class Document(BaseModel):
         write a kind/body mismatch that `from_yaml` then rejects.
         """
         expected = _SPEC_BY_KIND[self.meta.kind]
-        if not isinstance(self.spec, expected):
+        classes = _spec_classes(expected)
+        if not isinstance(self.spec, classes):
+            names = " | ".join(cls.__name__ for cls in classes)
             raise ValueError(
                 f"meta.kind={self.meta.kind.value!r} requires spec to be a "
-                f"{expected.__name__}, got {type(self.spec).__name__}"
+                f"{names}, got {type(self.spec).__name__}"
             )
         return self
 
