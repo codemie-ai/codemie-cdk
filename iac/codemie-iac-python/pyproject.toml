@@ -17,6 +17,15 @@ jsonschema = "^4.23.0"
 ruff = "^0.11.3"
 pytest-cov = "^6.0.0"
 
+[tool.poetry.scripts]
+codemie-iac = "codemie_iac.cli.main:main"
+
+[tool.ruff.lint]
+extend-select = ["C901"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

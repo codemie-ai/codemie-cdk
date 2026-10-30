@@ -1,0 +1,32 @@
+# Routing: `condition` evaluates an expression and goes to `then` or
+# `otherwise`.
+---
+version: v1
+meta:
+  kind: workflow
+  name: routing-condition
+spec:
+  workflow:
+    name: routing-condition
+    description: Branch on a boolean expression
+    mode: Sequential
+    assistants:
+      worker:
+        system_prompt: Do the task you are given.
+    states:
+      - id: check
+        assistant_id: worker
+        task: Decide whether the input is valid
+        next:
+          condition:
+            expression: is_valid == true
+            then: accept
+            otherwise: reject
+      - id: accept
+        assistant_id: worker
+        task: Accept the input
+        next: {}
+      - id: reject
+        assistant_id: worker
+        task: Reject the input
+        next: {}

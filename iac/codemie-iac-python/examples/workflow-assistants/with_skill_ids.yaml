@@ -1,0 +1,23 @@
+# Inline workflow assistant with a skill: `skill_ids` takes platform skill
+# ids (not document names).
+---
+version: v1
+meta:
+  kind: workflow
+  name: wf-assistant-skill
+spec:
+  workflow:
+    name: wf-assistant-skill
+    description: Inline assistant with a skill
+    mode: Sequential
+    assistants:
+      writer:
+        system_prompt: Write the changelog entry.
+        model: gpt-4o
+        skill_ids:
+          - 00000000-0000-0000-0000-000000000002
+    states:
+      - id: write
+        assistant_id: writer
+        task: Write the changelog entry
+        next: {}
