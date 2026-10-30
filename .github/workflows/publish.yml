@@ -21,6 +21,9 @@ on:
 permissions:
   contents: read
 
+env:
+  CI_WORKFLOWS_REF: main
+
 # One run per tag. A fixed group would keep only the newest pending run and cancel the ones in between.
 concurrency:
   group: publish-cdk-${{ github.event.release.tag_name || inputs.tag }}
@@ -44,11 +47,6 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '22'
 
       - name: Require the tag on the released commit
         id: tagcommit
@@ -80,6 +78,16 @@ jobs:
             echo "A real publish must run from main, not $GITHUB_REF"; exit 1
           fi
 
+      - name: Download version check script
+        run: |
+          mkdir -p "$RUNNER_TEMP/scripts/release"
+          curl -fsSL "https://raw.githubusercontent.com/codemie-ai/ci-workflows/${{ env.CI_WORKFLOWS_REF }}/scripts/release/check_version.py" -o "$RUNNER_TEMP/scripts/release/check_version.py"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+
       # The tag names the version. package.json holds only the base line (MAJOR.MINOR) and the tag must be on it.
       - name: Read the version from the tag
         id: version
@@ -87,7 +95,7 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           BASE=$(node -p "require('./package.json').version")
-          VERSION=$(python3 "$GITHUB_WORKSPACE/scripts/release/check_version.py" --ecosystem npm --name @codemieai/cdk --tag "$RELEASE_TAG" --base "$BASE" --tag-prefix cdk-v)
+          VERSION=$(python3 "$RUNNER_TEMP/scripts/release/check_version.py" --ecosystem npm --name @codemieai/cdk --tag "$RELEASE_TAG" --base "$BASE" --tag-prefix cdk-v)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing @codemieai/cdk $VERSION" >> "$GITHUB_STEP_SUMMARY"
 
@@ -115,7 +123,7 @@ jobs:
       - name: Check version against npm
         env:
           VERSION: ${{ steps.version.outputs.version }}
-        run: python3 "$GITHUB_WORKSPACE/scripts/release/check_version.py" --ecosystem npm --name @codemieai/cdk --version "$VERSION"
+        run: python3 "$RUNNER_TEMP/scripts/release/check_version.py" --ecosystem npm --name @codemieai/cdk --version "$VERSION"
 
       - name: Pack tarball
         run: mkdir -p "$RUNNER_TEMP/pack" && npm pack --pack-destination "$RUNNER_TEMP/pack" && cp "$RUNNER_TEMP"/pack/*.tgz "$GITHUB_WORKSPACE/"
@@ -140,14 +148,6 @@ jobs:
       contents: read
       id-token: write
     steps:
-      # Only the version script is needed. The registry is checked again here because this job can wait for
-      # approval and another release may have landed since `verify`. Checkout comes first: it clears the workspace.
-      - name: Check out the version script
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          sparse-checkout: scripts/release
-
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -160,11 +160,6 @@ jobs:
           name: cdk-package
           path: package/
 
-      - name: Check the version against the registry again
-        env:
-          VERSION: ${{ needs.verify.outputs.version }}
-        run: python3 scripts/release/check_version.py --ecosystem npm --name @codemieai/cdk --version "$VERSION"
-
       - name: Publish to npm
         env:
           VERSION: ${{ needs.verify.outputs.version }}
@@ -174,4 +169,3 @@ jobs:
             DIST_TAG="rc"
           fi
           npm publish ./package/codemieai-cdk-*.tgz --access public --tag "$DIST_TAG"
-
