@@ -121,3 +121,13 @@ def test_platform_rejection_ignores_malformed_field_errors():
 )
 def test_scrub_replaces_common_encodings_of_a_secret(form):
     assert scrub(f"echo {form} end", ['p@ss/w&rd"x']) == "echo [redacted] end"
+
+
+def test_scrub_replaces_a_secret_folded_or_quoted_by_a_yaml_dump():
+    import yaml
+
+    secret = "it's a long secret with several words " * 3
+    dumped = yaml.safe_dump({"a": {"b": {"env": {"TOKEN": secret}}}})
+    assert secret.strip() not in dumped  # folded across lines
+    assert "[redacted]" in scrub(dumped, [secret.strip()])
+    assert "words" not in scrub(dumped, [secret.strip()])

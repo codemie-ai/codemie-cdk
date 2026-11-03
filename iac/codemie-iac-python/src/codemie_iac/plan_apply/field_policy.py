@@ -117,10 +117,12 @@ def _datasource(comparable: str = "", extra_deny: str = "") -> FieldPolicy:
     )
 
 
-_CONFLUENCE = (
-    "cql include_restricted_content include_archived_content include_attachments "
-    "include_comments keep_markdown_format keep_newlines max_pages pages_per_request"
-)
+# Fields only the create request accepts (or the backend does not store) are
+# not compared: an update cannot change them, so they would differ forever.
+# That is the Confluence ``include_*``/``keep_*`` flags, the code
+# ``index_type``/``summarization_model``, the Git FAQ ``embedding_model`` and
+# the Azure DevOps ``organization``/``project``.
+_CONFLUENCE = "cql"
 
 FIELD_POLICIES: dict[str, FieldPolicy] = {
     DocumentKind.ASSISTANT.value: _ASSISTANT,
@@ -129,21 +131,15 @@ FIELD_POLICIES: dict[str, FieldPolicy] = {
     DocumentKind.CATEGORY.value: _CATEGORY,
     DocumentKind.INTEGRATION.value: _INTEGRATION,
     # Datasource types, keyed by spec ``type``.
-    "code": _datasource(
-        "link branch index_type files_filter summarization_model prompt docs_generation"
-    ),
+    "code": _datasource("link branch files_filter prompt docs_generation"),
     "knowledge_base_git_faq": _datasource(
-        "link branch files_filter embedding_model", extra_deny="error"
+        "link branch files_filter", extra_deny="error"
     ),
     "knowledge_base_jira": _datasource("jql custom_fields"),
     "knowledge_base_confluence": _datasource(_CONFLUENCE),
     "llm_routing_google": _datasource("google_doc google_doc_link", extra_deny="error"),
-    "knowledge_base_azure_devops_wiki": _datasource(
-        "wiki_query organization project wiki_name"
-    ),
-    "knowledge_base_azure_devops_work_item": _datasource(
-        "wiql_query organization project"
-    ),
+    "knowledge_base_azure_devops_wiki": _datasource("wiki_query wiki_name"),
+    "knowledge_base_azure_devops_work_item": _datasource("wiql_query"),
     "knowledge_base_xwiki": _datasource("space wiki"),
     "knowledge_base_file": _datasource(extra_deny="error updated_by"),
 }

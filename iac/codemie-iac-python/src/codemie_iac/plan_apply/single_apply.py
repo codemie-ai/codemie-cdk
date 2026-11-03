@@ -29,6 +29,9 @@ Comparison rules:
   one they are ``CannotCompare`` (never silently skipped). Fields that carry
   credential refs are compared with revealed values, but a ``Difference`` on
   them is redacted.
+- A field the document leaves unset (``None``) is not compared: the platform
+  may fill it (a slug, a default timezone) and a write never sends it. To clear
+  a field, author it empty (``""``, ``[]``).
 - ``None``, ``""`` and empty collections are all "unset" and compare equal.
   Live dicts are projected onto the document's keys, so server-added keys
   inside nested objects are not differences.
@@ -49,6 +52,7 @@ Comparison rules:
   such fields in ``ApplyResult.uncomparable`` and ``force=True`` writes anyway.
 """
 
+import copy
 from collections.abc import Mapping
 from types import SimpleNamespace
 from typing import Any
@@ -58,7 +62,7 @@ from pydantic import BaseModel, ConfigDict, computed_field
 
 from ..credentials import CredentialRef
 from ..envelope import Document, DocumentKind
-from .credentials import EnvCredentialResolver, SecretValue
+from .credentials import MCP_REF_FIELDS, EnvCredentialResolver, SecretValue
 from .bulk_create import (
     ResolveContext,
     build_resolved,
@@ -96,6 +100,8 @@ REFERENCE_FIELDS = frozenset(
         "setting_id",
     }
 )
+#: Skill categories are a fixed list of values, not Category entities.
+_VALUE_CATEGORY_KINDS = frozenset({DocumentKind.SKILL})
 _ID_LIST_FIELDS = frozenset({"categories", "assistant_ids"})
 _INTEGRATION_FIELDS = frozenset({"toolkits", "mcp_servers"})
 #: Comparable fields the live view may legitimately omit (the timezone is only
@@ -295,14 +301,59 @@ def _integrations_by_id(value: Any) -> Any:
     }
 
 
+def _without_key(value: Any, key: str) -> Any:
+    if isinstance(value, list):
+        return [_without_key(v, key) for v in value]
+    if isinstance(value, Mapping):
+        return {k: _without_key(v, key) for k, v in value.items() if k != key}
+    return value
+
+
+def _toolkit_view(value: Any) -> Any:
+    """Toolkits as compared: integrations by id, and without ``settings_config``,
+    which the backend recomputes on every read (it is true when a tool needs
+    settings and has no integration pinned), so a document cannot author it."""
+    return _without_key(_integrations_by_id(value), "settings_config")
+
+
 def _normalise_reference(field: str, resolved: Any, live: Any) -> tuple[Any, Any]:
     if field in _ID_LIST_FIELDS:
         return _ids(resolved), _ids(live)
+    if field == "toolkits":
+        return _toolkit_view(resolved), _toolkit_view(live)
     if field in _INTEGRATION_FIELDS:
         return _integrations_by_id(resolved), _integrations_by_id(live)
     if field == "yaml_config":
         return _load_yaml(resolved), _load_yaml(live)
     return resolved, live
+
+
+def _mask_mcp_servers(config: Any) -> Any:
+    """A workflow configuration with the credential-bearing parts of every MCP
+    server (assistant-level and tool-level) replaced by a placeholder."""
+    if not isinstance(config, Mapping):
+        return config
+    masked = copy.deepcopy(dict(config))
+    assistants = masked.get("assistants") or []
+    if isinstance(assistants, dict):
+        assistants = list(assistants.values())
+    servers = [
+        server
+        for assistant in assistants
+        if isinstance(assistant, dict)
+        for server in assistant.get("mcp_servers") or []
+        if isinstance(server, dict)
+    ]
+    servers += [
+        tool["mcp_server"]
+        for tool in masked.get("tools") or []
+        if isinstance(tool, dict) and isinstance(tool.get("mcp_server"), dict)
+    ]
+    for server in servers:
+        for key in MCP_REF_FIELDS:
+            if server.get(key) is not None:
+                server[key] = _REDACTED
+    return masked
 
 
 def _redact(finding: Difference | CannotCompare | None, redact: bool):
@@ -313,6 +364,12 @@ def _redact(finding: Difference | CannotCompare | None, redact: bool):
     return finding
 
 
+def _reference_fields(document: Document) -> frozenset[str]:
+    if document.meta.kind in _VALUE_CATEGORY_KINDS:
+        return REFERENCE_FIELDS - {"categories"}
+    return REFERENCE_FIELDS
+
+
 def _reference_findings(
     document: Document,
     live_view: Mapping[str, Any],
@@ -321,10 +378,11 @@ def _reference_findings(
     credential_fields: set[str],
     unresolvable_fields: set[str],
 ) -> list[Difference | CannotCompare]:
+    reference_fields = _reference_fields(document)
     present = {
         f
         for f, v in _document_values(document, all_fields=True).items()
-        if f in REFERENCE_FIELDS and _canon(v) is not None
+        if f in reference_fields and _canon(v) is not None
     }
     if ctx is None:
         return [
@@ -333,7 +391,7 @@ def _reference_findings(
         ]
     resolved = build_resolved(document, ctx)
     findings: list[Difference | CannotCompare] = []
-    for field in sorted(REFERENCE_FIELDS & resolved.keys()):
+    for field in sorted(reference_fields & resolved.keys()):
         if field not in policy.comparable or field not in live_view:
             continue
         if field in unresolvable_fields:  # already reported as CannotCompare
@@ -341,6 +399,12 @@ def _reference_findings(
         redact = field in credential_fields
         pair = _normalise_reference(field, resolved[field], live_view[field])
         finding = _redact(_compare_field(field, *pair), redact)
+        if field == "yaml_config" and isinstance(finding, Difference):
+            finding = Difference(
+                field=field,
+                document_value=_mask_mcp_servers(finding.document_value),
+                live_value=_mask_mcp_servers(finding.live_value),
+            )
         if finding is not None and not (redact and isinstance(finding, CannotCompare)):
             findings.append(finding)
     return findings
@@ -421,9 +485,11 @@ def diff(
     )
     credential_fields = {f.field for f in findings}
     unresolvable = {f.field for f in findings if _UNRESOLVABLE in f.reason}
-    handled = {f.field for f in findings} | REFERENCE_FIELDS | policy.deny
+    handled = {f.field for f in findings} | _reference_fields(document) | policy.deny
     for field, document_value in _document_values(document).items():
         if field in handled or field not in policy.comparable or field not in live_view:
+            continue
+        if document_value is None:  # not authored: the platform decides
             continue
         finding = _compare_field(field, document_value, live_view[field])
         if finding is not None:
@@ -556,10 +622,9 @@ class SingleEntityPlanner:
                     created=False,
                     uncomparable=[c.field for c in plan.cannot_compare],
                 )
-            if not force:
-                changed = frozenset(d.field for d in plan.differences) | frozenset(
-                    c.field for c in plan.cannot_compare
-                )
+            changed = frozenset(d.field for d in plan.differences) | frozenset(
+                c.field for c in plan.cannot_compare
+            )
         resolved = build_resolved(document, ctx)
         adapter = adapter_for(document)
         try:
@@ -568,13 +633,19 @@ class SingleEntityPlanner:
             else:
                 adapter.update(self._client, document, entity_id, resolved, changed)
         except PLATFORM_ERRORS as exc:
-            raise PlatformRejectionError(
+            # Raised below, outside the handler: the SDK error carries the
+            # request body, resolved credentials included.
+            rejection = PlatformRejectionError(
                 "platform_rejection",
                 document.meta.kind.value,
                 document.meta.name,
                 exc,
                 self._credentials.revealed_values(),
-            ) from None
+            )
+        else:
+            rejection = None
+        if rejection is not None:
+            raise rejection
         if entity_id is not None:
             return ApplyResult(id=entity_id, created=False)
         return ApplyResult(id=adapter.extract_id(response), created=True)

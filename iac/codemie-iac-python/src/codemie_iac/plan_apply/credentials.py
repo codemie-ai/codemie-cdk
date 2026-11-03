@@ -105,6 +105,9 @@ def _iter_servers(spec: Any) -> Iterator[Any]:
     assistants = getattr(workflow, "assistants", None) or {}
     for assistant in assistants.values():
         yield from getattr(assistant, "mcp_servers", None) or []
+    for tool in getattr(workflow, "tools", None) or []:
+        if getattr(tool, "mcp_server", None) is not None:
+            yield tool.mcp_server
 
 
 def _iter_candidates(spec: Any) -> Iterator[Any]:

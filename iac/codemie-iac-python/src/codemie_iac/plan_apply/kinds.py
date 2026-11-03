@@ -32,7 +32,9 @@ pre-rendered config) and ``resolve_assistant_name`` (a callable passed to
 returned, never stored.
 """
 
-from collections.abc import Callable, Mapping
+import logging
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -131,6 +133,8 @@ def _build(request_cls: type[BaseModel], data: dict, document: Document) -> Any:
     try:
         return request_cls(**data)
     except ValidationError as exc:
+        # Raised below, outside the handler, so that neither the cause nor the
+        # context (the offending input) stays reachable from the error.
         # Never ``str(exc)``: pydantic embeds the offending input, which here
         # may be a revealed credential.
         reason = "; ".join(
@@ -139,9 +143,10 @@ def _build(request_cls: type[BaseModel], data: dict, document: Document) -> Any:
                 include_input=False, include_url=False, include_context=False
             )
         )
-        raise ApplyError(
+        error = ApplyError(
             "invalid_body", document.meta.kind.value, document.meta.name, reason
-        ) from None
+        )
+    raise error
 
 
 def _spec_body(document: Document, resolved: Resolved, **exclude: Any) -> dict:
@@ -182,6 +187,46 @@ def _datasource_body(document: Document, resolved: Resolved) -> dict:
     return body
 
 
+@contextmanager
+def _no_request_body_log() -> Iterator[None]:
+    """Keep the SDK from logging request bodies while a write is sent.
+
+    The SDK logs ``Request body: ...`` at DEBUG for every POST and PUT, and
+    the bodies carry the resolved credentials, which no scrubbing can reach.
+    """
+    logger = logging.getLogger("codemie_sdk.utils.http")
+    level = logger.level
+    logger.setLevel(max(level, logging.INFO))
+    try:
+        yield
+    finally:
+        logger.setLevel(level)
+
+
+def _reject_declined_assistant(response: Any, document: Document) -> None:
+    """The platform answers HTTP 200 with the validation result and saves
+    nothing when a tool has no usable integration."""
+    validation = getattr(response, "validation", None)
+    if validation is None or not getattr(validation, "has_missing_integrations", True):
+        return
+    types = sorted(
+        {
+            str(getattr(m, "credential_type", ""))
+            for m in getattr(validation, "missing_by_credential_type", None) or []
+        }
+        - {""}
+    )
+    raise ApplyError(
+        "integration_missing",
+        document.meta.kind.value,
+        document.meta.name,
+        "the platform did not save the assistant: some tools have no "
+        "integration it can use"
+        + (f" (credential types: {', '.join(types)})" if types else "")
+        + "; pin an integration on them or create it first",
+    )
+
+
 def _make_adapter(
     *,
     service: str,
@@ -194,17 +239,27 @@ def _make_adapter(
     extract: Callable[[Any], str | None] = _extract_id,
     get_fn: Callable[[Any, Document, str], Any] | None = None,
     adjust_update: Callable[[dict, frozenset[str] | None], dict] | None = None,
+    check_response: Callable[[Any, Document], None] | None = None,
 ) -> KindAdapter:
+    def send(method, document, *args):
+        with _no_request_body_log():
+            response = method(*args)
+        if check_response is not None:
+            check_response(response, document)
+        return response
+
     def create(client, document, resolved):
         request = _build(create_cls, body(document, resolved), document)
-        return getattr(getattr(client, service), create_method)(request)
+        method = getattr(getattr(client, service), create_method)
+        return send(method, document, request)
 
     def update(client, document, entity_id, resolved, changed=None):
         data = body(document, resolved)
         if adjust_update is not None:
             data = adjust_update(data, changed)
         request = _build(update_cls, data, document)
-        return getattr(getattr(client, service), update_method)(entity_id, request)
+        method = getattr(getattr(client, service), update_method)
+        return send(method, document, entity_id, request)
 
     def get(client, document, entity_id):
         return getattr(getattr(client, service), get_method)(entity_id)
@@ -237,7 +292,7 @@ def _get_integration(client: Any, document: Document, entity_id: str) -> Any:
 # --- datasource sub-table, keyed by spec ``type`` ----------------------------
 
 # ``knowledge_base_file`` is deliberately absent: file datasources are rejected
-# by a later task, before an adapter is ever requested.
+# by ``guards.guard_supported``, before an adapter is ever requested.
 _DATASOURCE_CLASSES: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
     "code": (CodeDataSourceRequest, UpdateCodeDataSourceRequest),
     "knowledge_base_git_faq": (GitFaqDataSourceRequest, UpdateGitFaqDataSourceRequest),
@@ -286,11 +341,27 @@ def _datasource_get(client: Any, document: Document, entity_id: str) -> Any:
 
 # --- reindex-aware updates -------------------------------------------------------
 #
-# The backend reindexes on a datasource update unless told otherwise, and
-# rejects a Git FAQ update that carries a source field without a full reindex.
-# ``changed`` (see ``KindAdapter``) lets an update say what it needs.
+# What a datasource update reindexes depends on the route. Code routes start an
+# incremental reindex unless ``skip_reindex`` is set. The knowledge-base routes
+# store a changed source and reindex only when ``full_reindex`` is set, so a
+# source change without it leaves the index on the old source. ``changed``
+# (see ``KindAdapter``) names the fields the plan found different (or could
+# not compare); it never grows a reindex out of an unrelated write, such as a
+# forced one that only pushes a rotated secret.
 
-_GIT_FAQ_SOURCE_FIELDS = frozenset({"link", "branch", "files_filter", "setting_id"})
+#: Per datasource type, the fields whose change needs a full reindex.
+_REINDEX_SOURCE_FIELDS = {
+    "knowledge_base_git_faq": frozenset(
+        {"link", "branch", "files_filter", "setting_id"}
+    ),
+    "knowledge_base_jira": frozenset({"jql", "custom_fields", "setting_id"}),
+    "knowledge_base_confluence": frozenset({"cql", "setting_id"}),
+    "knowledge_base_azure_devops_wiki": frozenset({"wiki_query", "setting_id"}),
+    "knowledge_base_azure_devops_work_item": frozenset({"wiql_query", "setting_id"}),
+    "knowledge_base_xwiki": frozenset({"space", "wiki", "setting_id"}),
+}
+#: Types whose route answers 422 to a source field sent without a full reindex.
+_OMIT_UNCHANGED_SOURCE = frozenset({"knowledge_base_git_faq"})
 #: Code datasource fields whose change needs no reindex.
 _CODE_METADATA_FIELDS = frozenset(
     {
@@ -303,26 +374,32 @@ _CODE_METADATA_FIELDS = frozenset(
 )
 
 
-def _git_faq_update(data: dict, changed: frozenset[str] | None) -> dict:
-    """A source change is sent whole with ``full_reindex``; otherwise the
-    source fields are left out (the backend answers 422 to a source field
-    without a full reindex)."""
-    if changed is None or changed & _GIT_FAQ_SOURCE_FIELDS:
-        return {**data, "full_reindex": True}
-    return {k: v for k, v in data.items() if k not in _GIT_FAQ_SOURCE_FIELDS}
+def _source_update(ds_type: str) -> Callable[[dict, frozenset[str] | None], dict]:
+    source = _REINDEX_SOURCE_FIELDS[ds_type]
+
+    def adjust(data: dict, changed: frozenset[str] | None) -> dict:
+        if changed is None or changed & source:
+            return {**data, "full_reindex": True}
+        if ds_type in _OMIT_UNCHANGED_SOURCE:
+            return {k: v for k, v in data.items() if k not in source}
+        return data
+
+    return adjust
 
 
 def _code_update(data: dict, changed: frozenset[str] | None) -> dict:
-    """Metadata-only changes skip the incremental reindex the backend starts
-    by default."""
+    """Metadata-only changes skip the reindex. The update route reads the
+    visibility only from the camelCase key, which the SDK's update request does
+    not model, so it is added as an extra field."""
+    data = {**data, "projectSpaceVisible": data.get("project_space_visible")}
     if changed is not None and changed <= _CODE_METADATA_FIELDS:
-        return {**data, "skip_reindex": True}
+        data["skip_reindex"] = True
     return data
 
 
 _UPDATE_ADJUSTERS = {
     "code": _code_update,
-    "knowledge_base_git_faq": _git_faq_update,
+    **{ds_type: _source_update(ds_type) for ds_type in _REINDEX_SOURCE_FIELDS},
 }
 
 DATASOURCE_ADAPTERS: dict[str, KindAdapter] = {
@@ -372,6 +449,7 @@ ADAPTERS: dict[DocumentKind, KindAdapter] = {
         body=_spec_body,
         create_cls=AssistantCreateRequest,
         update_cls=AssistantUpdateRequest,
+        check_response=_reject_declined_assistant,
     ),
     DocumentKind.SKILL: _make_adapter(
         service="skills",

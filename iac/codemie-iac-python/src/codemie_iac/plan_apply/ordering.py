@@ -36,6 +36,7 @@ def _assistant_integrations(spec) -> Iterator[str]:
     for server in spec.mcp_servers:
         yield server.settings
         yield server.mcp_connect_auth_token
+        yield server.integration_alias
 
 
 def _assistant_edges(doc: Document) -> Iterator[Edge]:
@@ -52,8 +53,8 @@ def _assistant_edges(doc: Document) -> Iterator[Edge]:
 
 
 def _skill_edges(doc: Document) -> Iterator[Edge]:
-    for name in doc.spec.categories or []:
-        yield DocumentKind.CATEGORY, name
+    # Skill categories are fixed values (``SkillCategory``), not Category entities.
+    return iter(())
 
 
 def _workflow_edges(doc: Document) -> Iterator[Edge]:
@@ -66,6 +67,14 @@ def _workflow_edges(doc: Document) -> Iterator[Edge]:
             yield DocumentKind.ASSISTANT, assistant.name
         aliases = [t.integration_alias for t in assistant.tools]
         aliases += [s.integration_alias for s in assistant.mcp_servers]
+        for alias in aliases:
+            if alias:
+                yield DocumentKind.INTEGRATION, alias
+    for tool in doc.spec.workflow.tools:
+        aliases = [tool.integration_alias]
+        if tool.mcp_server is not None:
+            aliases.append(tool.mcp_server.integration_alias)
+        aliases += [a.integration_alias for a in tool.tool_access or []]
         for alias in aliases:
             if alias:
                 yield DocumentKind.INTEGRATION, alias

@@ -61,12 +61,34 @@ class FakeService:
         return [c for c in self.calls if c.method == method]
 
 
-class FakeAssistants(FakeService):
+class _Listing:
+    """``list`` with the real SDK signature: a wrong keyword is a TypeError, as
+    it would be against the SDK. The configured ``items`` come back on page 0,
+    then an empty page, like a server with fewer items than one page."""
+
+    def _page(self, page, **kwargs):
+        self.calls.append(Call("list", (), {"page": page, **kwargs}))
+        return list(self.responses.get("items", [])) if page == 0 else []
+
+
+class FakeAssistants(_Listing, FakeService):
     DEFAULTS = {
         "create": SimpleNamespace(message="ok", assistant_id="asst-1"),
         "update": SimpleNamespace(message="ok", validation=None),
         "get": SimpleNamespace(id="asst-1", name="a"),
     }
+
+    def list(
+        self,
+        minimal_response=True,
+        scope="visible_to_user",
+        page=0,
+        per_page=12,
+        filters=None,
+        sort_by=None,
+        sort_order="desc",
+    ):
+        return self._page(page, minimal_response=minimal_response, filters=filters)
 
     def create(self, request):
         return self._call("create", request)
@@ -78,11 +100,12 @@ class FakeAssistants(FakeService):
         return self._call("get", assistant_id)
 
 
-class FakeSkills(FakeService):
+class FakeSkills(_Listing, FakeService):
     DEFAULTS = {
         "create": SimpleNamespace(id="skill-1"),
         "update": SimpleNamespace(id="skill-1"),
         "get": SimpleNamespace(id="skill-1"),
+        "list_categories": [SimpleNamespace(value="code_review")],
     }
 
     def create(self, request):
@@ -94,8 +117,14 @@ class FakeSkills(FakeService):
     def get(self, skill_id):
         return self._call("get", skill_id)
 
+    def list(self, page=0, per_page=12, filters=None):
+        return SimpleNamespace(skills=self._page(page, filters=filters))
 
-class FakeWorkflows(FakeService):
+    def list_categories(self):
+        return self._call("list_categories")
+
+
+class FakeWorkflows(_Listing, FakeService):
     DEFAULTS = {
         "create_workflow": {"id": "wf-1"},
         "update": {"id": "wf-1"},
@@ -111,8 +140,13 @@ class FakeWorkflows(FakeService):
     def get(self, workflow_id):
         return self._call("get", workflow_id)
 
+    def list(
+        self, page=0, per_page=10, projects=None, filters=None, filter_by_user=False
+    ):
+        return self._page(page, projects=projects)
 
-class FakeDatasources(FakeService):
+
+class FakeDatasources(_Listing, FakeService):
     # The real datasource create/update responses carry no entity id.
     DEFAULTS = {
         "create": {"message": "indexing started"},
@@ -128,6 +162,20 @@ class FakeDatasources(FakeService):
 
     def get(self, datasource_id):
         return self._call("get", datasource_id)
+
+    def list(
+        self,
+        page=0,
+        per_page=10,
+        sort_key="update_date",
+        sort_order="desc",
+        datasource_types=None,
+        projects=None,
+        owner=None,
+        status=None,
+        filters=None,
+    ):
+        return self._page(page, projects=projects)
 
 
 class FakeIntegrations(FakeService):
@@ -162,6 +210,10 @@ class FakeIntegrations(FakeService):
 
     def get(self, integration_id, setting_type=None):
         return self._call("get", integration_id, setting_type=setting_type)
+
+    def list_available(self, scope="visible_to_user"):
+        self.calls.append(Call("list_available", (), {}))
+        return list(self._created)
 
     def list(self, setting_type=None, page=0, per_page=10, **kw):
         self.calls.append(Call("list", (), {"setting_type": setting_type}))

@@ -24,7 +24,6 @@ from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from codemie_sdk.models.integration import IntegrationType
 
 from ..envelope import Document, DocumentKind
 from ..resolver import ReferenceResolutionError, ReferenceResolver
@@ -119,23 +118,15 @@ def _find_datasources(client: Any, target: str, name: str) -> list[Any]:
 
 
 def _find_integrations(client: Any, target: str, name: str) -> list[Any]:
-    """Integrations of the target project with alias ``name``, every page of
-    both the project and the user listing (``get_by_alias`` reads one page and
-    returns the first match whatever its project)."""
-    found = []
-    for setting_type in (IntegrationType.PROJECT, IntegrationType.USER):
-        items = _pages(
-            lambda p, st=setting_type: client.integrations.list(
-                setting_type=st, page=p, per_page=_PAGE_SIZE
-            )
-        )
-        found += [
-            i
-            for i in items
-            if getattr(i, "alias", None) == name
-            and _in_project(i, target, "project_name")
-        ]
-    return found
+    """Integrations of the target project with alias ``name`` that the caller
+    can use. The project listing only shows a non-admin the projects they
+    administer, so ``list_available`` (project and user scopes, as the caller
+    may use them) is the one that finds a shared project integration."""
+    return [
+        i
+        for i in client.integrations.list_available()
+        if getattr(i, "alias", None) == name and _in_project(i, target, "project_name")
+    ]
 
 
 def _find_categories(client: Any, target: str, name: str) -> list[Any]:
@@ -188,6 +179,10 @@ class NameLookup:
     def target(self) -> str:
         return self._target
 
+    @property
+    def client(self) -> Any:
+        return self._client
+
     def in_bundle(self, kind: DocumentKind, name: str) -> Document | None:
         """The bundle document for the reference; None if absent. Raises
         ``UnresolvedReferenceError`` if ambiguous within the bundle."""
@@ -198,10 +193,19 @@ class NameLookup:
                 raise self._error(kind, name, str(exc)) from exc
             return None
 
-    def _live(self, kind: DocumentKind, name: str) -> Any | None:
+    def _live(
+        self, kind: DocumentKind, name: str, document: Document | None = None
+    ) -> Any | None:
         if self._client is None:
             return None
         matches = LIVE_FINDERS[kind](self._client, self._target, name)
+        # Alias uniqueness is per setting type: a bundle integration is the
+        # one of its own type, not a same-named one of another type.
+        if kind is DocumentKind.INTEGRATION and document is not None:
+            wanted = document.spec.setting_type
+            matches = [
+                m for m in matches if getattr(m, "setting_type", wanted) == wanted
+            ]
         if len(matches) > 1:
             raise self._error(
                 kind,
@@ -249,7 +253,7 @@ class NameLookup:
         known = (created or {}).get((kind, name))
         if known is not None and document is not None:
             return Reference(known, document)
-        live = self._live(kind, _live_name(kind, document, name))
+        live = self._live(kind, _live_name(kind, document, name), document)
         entity_id = getattr(live, "id", None)
         if not entity_id:
             raise self._error(kind, name, f"no platform id for {kind.value} {name!r}")

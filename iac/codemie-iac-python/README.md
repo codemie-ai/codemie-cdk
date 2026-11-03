@@ -363,23 +363,44 @@ client); the rest of the library stays offline. Ground rules:
   secret, a masked value) do not make a plan non-empty; `apply` lists them in
   `ApplyResult.uncomparable`. Pass `force=True` to write the full document
   anyway, e.g. to rotate a secret.
+- **A field the document leaves unset is not compared.** The platform may fill
+  it (an assistant's slug, a datasource's default timezone) and a write never
+  sends it. To clear a value, author it empty (`""`, `[]`).
 - **A document's `meta.name` must equal the entity's own name** (the spec
   `name`, the workflow's `name`, or the integration's `alias`). References and
   the live lookup go by `meta.name`, while the platform uses the spec name, so
   a difference is refused with `name_mismatch` before anything is written.
-- **Updates avoid needless reindexing.** A code datasource whose plan differs
-  only in metadata (description, visibility, schedule) is updated with
-  `skip_reindex`. A Git FAQ datasource with a changed source field (`link`,
-  `branch`, `files_filter`, `setting_id`) is sent whole with `full_reindex`;
-  otherwise its source fields are left out, because the backend rejects them
-  without a full reindex. `force=True` writes everything and reindexes.
+- **Updates reindex only when the source changed.** A code datasource whose
+  plan differs only in metadata (description, visibility, schedule) is updated
+  with `skip_reindex`. For Git FAQ, Jira, Confluence, Azure DevOps and xWiki
+  datasources a changed source (for example `jql`, `cql`, `link`, `branch`)
+  is sent with `full_reindex`, because those routes store a new source and
+  keep the old index otherwise. A Git FAQ update without a source change
+  leaves its source fields out, as the backend rejects them without a full
+  reindex. `force=True` re-sends the document but follows the same rule: a
+  forced write that only pushes a rotated secret reindexes nothing.
+- **Fields an update cannot change are not compared.** The create-only
+  settings (Confluence `include_*` and `keep_*` flags, a code datasource's
+  `index_type` and `summarization_model`, a Git FAQ `embedding_model`) and the
+  Azure DevOps `organization`/`project` (not stored by the platform) are
+  written on create and never reported as a difference. Changing the
+  document of a Google datasource is refused (`unsupported_datasource_change`),
+  as its route cannot take a new one.
+- **An assistant the platform declines is a failure.** When a tool has no
+  integration the platform can use, it answers HTTP 200 with a validation
+  result and saves nothing; that is reported as `integration_missing`, in
+  bulk create (nothing is recorded as created) and in single apply.
+- **Skill categories are values.** They are the platform's fixed list, sent as
+  written and checked before the first write; assistant categories still
+  reference Category documents by name.
 - **Rejected calls are scrubbed.** A platform rejection (the SDK raises
   `requests.HTTPError`) becomes a `PlatformRejectionError` holding only the
   status, a scrubbed message and the parsed field errors; the original
   exception, whose request holds the resolved credentials, is not kept.
-  Secrets are also replaced in their JSON-escaped, URL-encoded and base64
-  forms. The SDK itself logs request bodies at `DEBUG` level, credentials
-  included, so keep the `codemie_sdk` logger above `DEBUG` while applying.
+  Secrets are also replaced in their JSON-escaped, URL-encoded, YAML-quoted
+  and base64 forms. The SDK logs request bodies at `DEBUG` level, credentials
+  included; the engine raises the `codemie_sdk.utils.http` logger to `INFO`
+  while it sends a write.
 
 ```python
 from codemie_sdk import CodeMieClient
@@ -392,7 +413,7 @@ bundle = from_yaml(open("bundle.yaml").read())
 # Create everything in the bundle, dependencies first.
 report = BulkCreator(client).create_all(bundle, target="my-project")
 for item in report.created:
-    print(item.kind, item.name, item.id)   # ids come back to you
+    print(item.kind, item.name, item.id)   # None for datasources and integrations
 if report.failed:                           # stops at the first failure
     print(report.failed.error_type, report.failed.reason)
 
@@ -407,6 +428,14 @@ if not plan.is_empty:
     print(result.id, result.created)
 ```
 
+Bulk create is not idempotent: it never looks for an existing entity, so
+running it again after a partial failure creates the first entities a second
+time (the report lists what was created, so rerun only the rest). A timeout or
+connection error on a create is reported as `apply_failed`, but the entity may
+exist; check before retrying. Datasource and integration ids are not returned
+(the backend answers a create with a message only); referenced ones are found
+by name afterwards.
+
 `target` is the project the entities live in. Failures raise or report an
 `ApplyError` (`PlatformRejectionError`, `UnresolvedReferenceError`,
 `UnresolvableCredentialError`) that names the entity kind and name.
@@ -415,6 +444,12 @@ if not plan.is_empty:
 
 Some things are refused up front, with a clear error, before anything is
 written.
+
+**Workflow references by name stop at assistants and integrations.** A
+workflow's `datasource_ids`, `skill_ids` and `states[].workflow_id` are not
+resolved by name or ordered, and a workflow needs a non-empty description.
+`from_entity` copies the ids and names an entity carries; it does not turn
+platform ids into the names this tool resolves, so build documents with names.
 
 **A datasource cannot be renamed or moved to another project.** If the
 document's datasource name or project differs from the live datasource you

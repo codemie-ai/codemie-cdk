@@ -189,12 +189,6 @@ def _assistant_resolved(document: Document, ctx: ResolveContext) -> dict:
     }
 
 
-def _skill_resolved(document: Document, ctx: ResolveContext) -> dict:
-    return {
-        "categories": ctx.ids(DocumentKind.CATEGORY, document.spec.categories or [])
-    }
-
-
 def _integration_resolved(document: Document, ctx: ResolveContext) -> dict:
     return {
         "credential_values": [
@@ -252,11 +246,21 @@ def _workflow_yaml(document: Document, ctx: ResolveContext) -> str:
         lambda name: ctx.ref(DocumentKind.ASSISTANT, name).id
     )
     payload = _yaml_mapping(document, rendered)
-    for assistant in _dict_items(document, payload.get("assistants")):
-        for server in _dict_items(document, assistant.get("mcp_servers")):
-            for key in MCP_REF_FIELDS:
-                if server.get(key) is not None:
-                    server[key] = ctx.reveal(server[key])
+    servers = [
+        server
+        for assistant in _dict_items(document, payload.get("assistants"))
+        for server in _dict_items(document, assistant.get("mcp_servers"))
+    ]
+    # A tool declared once per workflow may carry an MCP server of its own.
+    servers += [
+        tool["mcp_server"]
+        for tool in _dict_items(document, payload.get("tools"))
+        if isinstance(tool.get("mcp_server"), dict)
+    ]
+    for server in servers:
+        for key in MCP_REF_FIELDS:
+            if server.get(key) is not None:
+                server[key] = ctx.reveal(server[key])
     return yaml.safe_dump(
         payload, sort_keys=False, default_flow_style=False, allow_unicode=True
     )
@@ -282,7 +286,8 @@ def _nothing(_document: Document, _ctx: ResolveContext) -> dict:
 
 _RESOLVED_BUILDERS: dict[DocumentKind, Callable[[Document, ResolveContext], dict]] = {
     DocumentKind.ASSISTANT: _assistant_resolved,
-    DocumentKind.SKILL: _skill_resolved,
+    # Skill categories are a fixed list of values, sent as authored.
+    DocumentKind.SKILL: _nothing,
     DocumentKind.INTEGRATION: _integration_resolved,
     DocumentKind.WORKFLOW: _workflow_resolved,
     DocumentKind.CATEGORY: _nothing,
@@ -334,6 +339,26 @@ def check_references(documents: list[Document], ctx: ResolveContext) -> None:
             ctx.lookup.require(kind, name, _label(document))
 
 
+def check_skill_categories(documents: list[Document], ctx: ResolveContext) -> None:
+    """Skill categories are a fixed list on the platform: refuse an unknown one
+    before anything is written."""
+    skills = [d for d in documents if d.meta.kind is DocumentKind.SKILL]
+    wanted = {c for d in skills for c in d.spec.categories or []}
+    if not wanted or ctx.lookup.client is None:
+        return
+    known = {c.value for c in ctx.lookup.client.skills.list_categories()}
+    for document in skills:
+        unknown = sorted(set(document.spec.categories or []) - known)
+        if unknown:
+            raise ApplyError(
+                "unknown_skill_category",
+                document.meta.kind.value,
+                document.meta.name,
+                f"unknown skill categories {unknown}; the platform accepts "
+                f"{sorted(known)}",
+            )
+
+
 def check_credentials(documents: list[Document], ctx: ResolveContext) -> None:
     for document in documents:
         for ref in ctx.credentials.collect_refs(document.spec):
@@ -348,6 +373,7 @@ PREFLIGHT_CHECKS: list[Callable[[list[Document], ResolveContext], None]] = [
     check_projects,
     check_adapters,
     check_references,
+    check_skill_categories,
     check_credentials,
 ]
 
@@ -408,13 +434,19 @@ class BulkCreator:
         try:
             response = adapter.create(self._client, document, resolved)
         except PLATFORM_ERRORS as exc:
-            raise PlatformRejectionError(
+            # Raised below, outside the handler: the SDK error carries the
+            # request body, resolved credentials included.
+            rejection = PlatformRejectionError(
                 "platform_rejection",
                 kind.value,
                 name,
                 exc,
                 self._credentials.revealed_values(),
-            ) from None
+            )
+        else:
+            rejection = None
+        if rejection is not None:
+            raise rejection
         entity_id = adapter.extract_id(response)
         if entity_id is not None:
             ctx.created[(kind, name)] = entity_id

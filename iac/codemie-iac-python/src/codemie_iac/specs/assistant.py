@@ -203,6 +203,7 @@ class ToolDetailsSpec(BaseModel):
     settings_config: bool = False
     user_description: str | None = None
     settings: str | None = None
+    auto_credentials_lookup: bool = True
 
     @classmethod
     def from_entity(cls, tool: ToolDetails) -> "ToolDetailsSpec":
@@ -211,6 +212,7 @@ class ToolDetailsSpec(BaseModel):
             label=tool.label,
             settings_config=tool.settings_config,
             user_description=tool.user_description,
+            auto_credentials_lookup=tool.auto_credentials_lookup,
             settings=_integration_reference_name(
                 tool.settings, context=f"ToolDetails {tool.name!r}.settings"
             ),
@@ -232,10 +234,12 @@ class ToolKitDetailsSpec(BaseModel):
     settings_config: bool = False
     is_external: bool = False
     settings: str | None = None
+    auto_credentials_lookup: bool = True
 
     @classmethod
     def from_entity(cls, toolkit: ToolKitDetails) -> "ToolKitDetailsSpec":
         return cls(
+            auto_credentials_lookup=toolkit.auto_credentials_lookup,
             toolkit=toolkit.toolkit,
             tools=[ToolDetailsSpec.from_entity(tool) for tool in toolkit.tools],
             label=toolkit.label,

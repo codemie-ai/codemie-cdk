@@ -65,7 +65,16 @@ def _error(document: Document, error_type: str, reason: str) -> ApplyError:
 
 
 def guard_supported(document: Document) -> None:
-    """Raise ``ApplyError`` for a file datasource (no adapter is consulted)."""
+    """Raise ``ApplyError`` for what cannot be written: a file datasource (no
+    adapter is consulted) or a workflow without a description (the platform
+    requires one, and the update request rejects an empty one)."""
+    if document.meta.kind is DocumentKind.WORKFLOW:
+        if not (document.spec.workflow.description or "").strip():
+            raise _error(
+                document,
+                "invalid_workflow",
+                "a workflow needs a non-empty description",
+            )
     if _is_datasource(document) and document.spec.type == _FILE_TYPE:
         raise _error(
             document,
@@ -88,6 +97,7 @@ def guard_datasource_identity(document: Document, live: Any) -> None:
     live_name = _live_value(live, "name")
     live_project = _live_value(live, "project_name")
     if live_name == spec.name and live_project == spec.project_name:
+        _guard_google_document(document, live)
         return
     raise _error(
         document,
@@ -96,6 +106,21 @@ def guard_datasource_identity(document: Document, live: Any) -> None:
         f"{spec.name!r} in project {spec.project_name!r}, live is "
         f"{live_name!r} in project {live_project!r}",
     )
+
+
+def _guard_google_document(document: Document, live: Any) -> None:
+    """The Google update route reindexes from the stored link and cannot take a
+    new one, so a changed document would be reported as applied and never be."""
+    if document.spec.type != "llm_routing_google":
+        return
+    live_doc = _live_value(live, "google_doc_link")
+    if live_doc is not None and live_doc != document.spec.google_doc:
+        raise _error(
+            document,
+            "unsupported_datasource_change",
+            "changing the document of a Google datasource is not supported: "
+            "create a new datasource for the new document",
+        )
 
 
 def guard_project(document: Document, target: str) -> None:

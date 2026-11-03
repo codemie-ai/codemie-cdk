@@ -267,13 +267,28 @@ def test_unsupported_kind_variant_fails_preflight_via_adapter(monkeypatch):
     assert _writes(client) == []
 
 
-def test_skill_categories_resolve_to_ids():
-    client = FakeClient(skills=FakeSkills(), categories=FakeCategories())
+def test_skill_categories_pass_through_as_values():
+    client = FakeClient(skills=FakeSkills())
     report = BulkCreator(client).create_all(
-        [_skill("sk", categories=["cat"]), _category("cat")], TARGET
+        [_skill("sk", categories=["code_review"])], TARGET
     )
     assert report.failed is None
-    assert client.skills.calls_to("create")[0].args[0].categories == ["cat-1"]
+    assert client.skills.calls_to("create")[0].args[0].categories == ["code_review"]
+
+
+def test_unknown_skill_category_fails_before_any_write():
+    client = FakeClient(skills=FakeSkills())
+    with pytest.raises(ApplyError) as info:
+        BulkCreator(client).create_all([_skill("sk", categories=["nope"])], TARGET)
+    assert info.value.error_type == "unknown_skill_category"
+    assert _writes(client) == []
+
+
+def test_skill_categories_are_not_dependencies():
+    from codemie_iac.plan_apply.ordering import DependencyGraph
+
+    docs = [_skill("sk", categories=["code_review"])]
+    assert [d.meta.name for d in DependencyGraph(docs).order()] == ["sk"]
 
 
 def test_workflow_assistant_reference_becomes_id_and_project_is_target():

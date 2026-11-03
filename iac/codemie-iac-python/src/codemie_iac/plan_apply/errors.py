@@ -16,6 +16,7 @@
 
 import base64
 import json
+import re
 from collections.abc import Iterable
 from typing import Any
 from urllib.parse import quote, quote_plus
@@ -44,7 +45,8 @@ PLATFORM_ERRORS = (ApiError, requests.HTTPError)
 
 def _forms(secret: str) -> set[str]:
     """The secret as it may appear in a response: raw, JSON-escaped,
-    URL-encoded and base64 (standard and URL-safe) of the bare value.
+    URL-encoded, single-quoted for YAML, and base64 (standard and URL-safe)
+    of the bare value.
 
     A composite encoding (``base64("user:secret")`` for basic auth) is not
     covered: the other half is unknown here.
@@ -53,6 +55,7 @@ def _forms(secret: str) -> set[str]:
     return {
         secret,
         json.dumps(secret)[1:-1],
+        secret.replace("'", "''"),
         quote(secret, safe=""),
         quote_plus(secret),
         base64.b64encode(raw).decode(),
@@ -65,7 +68,10 @@ def scrub(text: str, secrets: Iterable[str] = ()) -> str:
     replaced by a placeholder."""
     forms = {f for s in secrets if s for f in _forms(s) if f}
     for form in sorted(forms, key=len, reverse=True):
-        text = text.replace(form, _REDACTED)
+        # A YAML dump folds a long value at its spaces (newline and indent),
+        # so a space matches any run of whitespace.
+        pattern = r"\s+".join(re.escape(part) for part in form.split(" "))
+        text = re.sub(pattern, _REDACTED, text)
     return text
 
 
