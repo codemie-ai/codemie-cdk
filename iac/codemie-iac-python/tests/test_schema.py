@@ -40,3 +40,9 @@ def test_malformed_document_names_json_path():
     with pytest.raises(DocumentValidationError) as exc:
         validate_document(bad)
     assert "meta" in exc.value.json_path
+
+
+def test_assistant_schema_exposes_skill_ids():
+    from codemie_iac.specs.assistant import AssistantSpec
+
+    assert "skill_ids" in AssistantSpec.model_json_schema()["properties"]

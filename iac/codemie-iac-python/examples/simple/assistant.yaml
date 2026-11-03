@@ -1,0 +1,12 @@
+# Assistant: the minimal form, a name, a prompt and a model.
+---
+version: v1
+meta:
+  kind: assistant
+  name: release-notes-writer
+spec:
+  name: release-notes-writer
+  description: Writes release notes from merged PRs
+  system_prompt: You write concise, user-facing release notes.
+  project: my-project
+  llm_model_type: gpt-4o

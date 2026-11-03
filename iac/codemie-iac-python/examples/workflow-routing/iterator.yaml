@@ -1,0 +1,28 @@
+# Routing: `iter_key` iterates over the list stored under that context key;
+# the next state runs once per item and `finish_iteration` ends the loop.
+---
+version: v1
+meta:
+  kind: workflow
+  name: routing-iterator
+spec:
+  workflow:
+    name: routing-iterator
+    description: Run a state once per list item
+    mode: Sequential
+    assistants:
+      worker:
+        system_prompt: Do the task you are given.
+    states:
+      - id: list-items
+        assistant_id: worker
+        task: Produce a JSON list of items
+        output_schema: '{"items": ["string"]}'
+        next:
+          state_id: process-item
+          iter_key: items
+      - id: process-item
+        assistant_id: worker
+        task: Process one item
+        finish_iteration: true
+        next: {}
