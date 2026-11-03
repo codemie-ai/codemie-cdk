@@ -66,7 +66,7 @@ _ASSISTANT = _policy(
 _SKILL = _policy(
     # slug/icon_url/mcp_servers/display_name are not authored by SkillSpec.
     deny="id display_name created_date created_by updated_date is_attached "
-    "reactions_count assistants_count mcp_servers slug icon_url",
+    "reactions_count assistants_count mcp_servers slug icon_url bundle_warning",
     comparable="name description project visibility categories "
     "enabled_builtin_subagents content",
 )
