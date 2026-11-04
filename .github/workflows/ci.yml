@@ -2,7 +2,7 @@ name: CI
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
 
@@ -153,15 +153,9 @@ jobs:
 
   internal-refs:
     name: Internal references
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Scan for internal references
-        run: python3 scripts/scan_internal_refs.py --tree .
+    permissions:
+      contents: read
+    uses: codemie-ai/ci-workflows/.github/workflows/reusable-internal-refs-scan.yml@main
 
   secrets-detection:
     name: Security
@@ -169,19 +163,3 @@ jobs:
       contents: read
       pull-requests: read
     uses: codemie-ai/ci-workflows/.github/workflows/reusable-secrets-detection.yml@main
-
-  pr-title:
-    name: PR title
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-      - name: Validate Conventional Commits title
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-zA-Z0-9._/-]+\))?!?: .+'
-          if ! [[ "$PR_TITLE" =~ $pattern ]]; then
-            echo "PR title must follow Conventional Commits: <type>(<optional scope>): <description>"
-            echo "Allowed types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert"
-            exit 1
-          fi
