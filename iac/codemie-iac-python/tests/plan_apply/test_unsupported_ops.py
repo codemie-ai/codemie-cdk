@@ -108,3 +108,26 @@ def test_file_datasource_fails_bulk_preflight_with_nothing_created():
         creator.create_all([_ds(), _ds("knowledge_base_file", name="f")], TARGET)
     assert "file datasources are not supported" in info.value.reason
     assert client.datasources.calls == []
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"type": "svn", "link": "https://svn/x"},
+        {"type": "knowledge_base_sharepoint", "site_url": "https://sp/x"},
+        {"type": "knowledge_base_xray", "jql": "project = X"},
+        {"type": "provider", "provider_name": "p", "toolkit_id": "t"},
+    ],
+    ids=["svn", "sharepoint", "xray", "provider"],
+)
+def test_new_kinds_are_not_rejected_by_the_support_guard(extra):
+    from codemie_iac.plan_apply.guards import guard_supported
+
+    data = {"name": "ds", "project_name": TARGET, "description": "d", **extra}
+    spec = TypeAdapter(DatasourceSpec).validate_python(data)
+    doc = Document(
+        version="v1",
+        meta=DocumentMeta(kind=DocumentKind.DATASOURCE, name="ds"),
+        spec=spec,
+    )
+    guard_supported(doc)  # does not raise

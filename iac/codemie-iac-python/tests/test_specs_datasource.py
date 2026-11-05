@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import pytest
-from pydantic import TypeAdapter, ValidationError
+from pydantic import ConfigDict, TypeAdapter, ValidationError
 
 from codemie_sdk.models.datasource import (
     AzureDevOpsWikiDataSourceRequest,
@@ -24,6 +24,10 @@ from codemie_sdk.models.datasource import (
     GitFaqDataSourceRequest,
     GoogleDataSourceRequest,
     JiraDataSourceRequest,
+    ProviderDataSourceRequest,
+    SharePointDataSourceRequest,
+    SvnDataSourceRequest,
+    XrayDataSourceRequest,
     XWikiDataSourceRequest,
 )
 
@@ -37,8 +41,13 @@ from codemie_iac.specs.datasource import (
     GitFaqDatasourceSpec,
     GoogleDatasourceSpec,
     JiraDatasourceSpec,
+    ProviderDatasourceSpec,
+    SharepointDatasourceSpec,
+    SvnDatasourceSpec,
+    XrayDatasourceSpec,
     XWikiDatasourceSpec,
 )
+from codemie_iac.envelope import Document, DocumentKind, DocumentMeta
 
 _adapter = TypeAdapter(DatasourceSpec)
 
@@ -326,3 +335,410 @@ def test_xwiki_spec_from_entity():
     spec = XWikiDatasourceSpec.from_entity(request)
     assert spec.space == request.space
     assert spec.wiki == request.wiki
+
+
+_NEW_KINDS = {
+    "svn": (SvnDatasourceSpec, {"link": "https://svn.example.com/repo"}, "link"),
+    "knowledge_base_sharepoint": (
+        SharepointDatasourceSpec,
+        {"site_url": "https://example.sharepoint.com/sites/x"},
+        "site_url",
+    ),
+    "knowledge_base_xray": (XrayDatasourceSpec, {"jql": "project = X"}, "jql"),
+}
+
+
+def _raw(type_, **extra):
+    return {
+        "name": "ds_one",
+        "project_name": "proj",
+        "description": "d",
+        "type": type_,
+        **extra,
+    }
+
+
+def _document(raw):
+    return Document(
+        version="v1",
+        meta=DocumentMeta(kind=DocumentKind.DATASOURCE, name=raw["name"]),
+        spec=raw,
+    )
+
+
+@pytest.mark.parametrize("type_", list(_NEW_KINDS))
+def test_new_kind_roundtrips_through_union(type_):
+    cls, required, _ = _NEW_KINDS[type_]
+    spec = cls(name="ds_one", project_name="proj", description="d", **required)
+    assert spec.type == type_
+    assert _adapter.validate_python(spec.model_dump()) == spec
+
+
+def test_roundtrip_provider():
+    spec = ProviderDatasourceSpec(
+        name="prov_ds",
+        project_name="proj",
+        description="d",
+        provider_name="acme",
+        toolkit_id="tk-1",
+        settings={"index": "x", "api_key": "env:ACME_KEY"},
+    )
+    assert spec.type == "provider"
+    assert _adapter.validate_python(spec.model_dump()) == spec
+
+
+@pytest.mark.parametrize("type_", list(_NEW_KINDS))
+def test_new_kind_unknown_key_rejected_naming_key(type_):
+    _, required, _ = _NEW_KINDS[type_]
+    with pytest.raises(ValidationError, match="bogus_key"):
+        _document(_raw(type_, bogus_key=1, **required))
+
+
+def test_provider_unknown_key_rejected():
+    with pytest.raises(ValidationError, match="bogus_key"):
+        _document(_raw("provider", provider_name="a", toolkit_id="t", bogus_key=1))
+
+
+@pytest.mark.parametrize("type_", list(_NEW_KINDS))
+def test_new_kind_missing_required_setting_names_setting(type_):
+    _, _, setting = _NEW_KINDS[type_]
+    with pytest.raises(ValidationError, match=setting):
+        _document(_raw(type_))
+
+
+def test_sharepoint_access_token_is_an_env_reference():
+    doc = _document(
+        _raw(
+            "knowledge_base_sharepoint",
+            site_url="https://example.sharepoint.com",
+            auth_type="oauth_custom",
+            access_token="env:TOK",
+        )
+    )
+    assert doc.spec.access_token.root == "env:TOK"
+
+
+@pytest.mark.parametrize("auth_type", ["oauth_codemie", "oauth_custom"])
+def test_sharepoint_oauth_without_access_token_is_accepted(auth_type):
+    # An exported document carries no token; the SDK asks for it on create and
+    # on a reindexing update, not the document model.
+    doc = _document(
+        _raw(
+            "knowledge_base_sharepoint",
+            site_url="https://example.sharepoint.com",
+            auth_type=auth_type,
+        )
+    )
+    assert doc.spec.access_token is None
+
+
+def test_sharepoint_literal_access_token_is_rejected():
+    with pytest.raises(ValidationError) as err:
+        _document(
+            _raw(
+                "knowledge_base_sharepoint",
+                site_url="https://example.sharepoint.com",
+                auth_type="oauth_custom",
+                access_token="literal-token-value",
+            )
+        )
+    assert "literal-token-value" not in str(err.value)
+
+
+def test_svn_branch_is_optional_and_stays_unset():
+    spec = SvnDatasourceSpec(
+        name="ds_one", project_name="p", description="d", link="https://s/r"
+    )
+    assert spec.branch is None
+    assert (
+        SvnDatasourceSpec.model_validate({**spec.model_dump(), "branch": None}).branch
+        is None
+    )
+
+
+def test_svn_spec_from_entity():
+    request = SvnDataSourceRequest(
+        name="svn_kb",
+        project_name="p",
+        description="d",
+        link="https://s/r",
+        branch="b1",
+        files_filter="*.c",
+        embeddings_model="emb",
+        prompt="pr",
+        docs_generation=True,
+        index_type="code",
+        setting_id="int-1",
+    )
+    spec = SvnDatasourceSpec.from_entity(request)
+    assert (spec.link, spec.branch, spec.files_filter) == ("https://s/r", "b1", "*.c")
+    assert (spec.embeddings_model, spec.prompt) == ("emb", "pr")
+    assert spec.docs_generation is True
+    assert spec.setting_id == "int-1"
+
+
+def test_sharepoint_spec_from_entity():
+    request = SharePointDataSourceRequest(
+        name="sp_kb",
+        project_name="p",
+        description="d",
+        site_url="https://x.sharepoint.com",
+        include_pages=True,
+        include_documents=False,
+        include_lists=True,
+        max_file_size_mb=10,
+        files_filter="*.docx",
+        auth_type="oauth_custom",
+        oauth_client_id="cid",
+        oauth_tenant_id="tid",
+        access_token="transient",
+        embedding_model="emb",
+        setting_id="int-2",
+    )
+    spec = SharepointDatasourceSpec.from_entity(request)
+    assert spec.site_url == "https://x.sharepoint.com"
+    assert (spec.include_pages, spec.include_documents, spec.include_lists) == (
+        True,
+        False,
+        True,
+    )
+    assert spec.max_file_size_mb == 10
+    assert spec.auth_type == "oauth_custom"
+    assert spec.access_token.root.endswith("ACCESS_TOKEN")
+    assert (spec.oauth_client_id, spec.oauth_tenant_id) == ("cid", "tid")
+    assert spec.embedding_model == "emb"
+    assert spec.setting_id == "int-2"
+
+
+def test_xray_spec_from_entity():
+    request = XrayDataSourceRequest(
+        name="xray_kb",
+        project_name="p",
+        description="d",
+        jql="project = X",
+        embedding_model="emb",
+        setting_id="int-3",
+    )
+    spec = XrayDatasourceSpec.from_entity(request)
+    assert (spec.jql, spec.embedding_model, spec.setting_id) == (
+        "project = X",
+        "emb",
+        "int-3",
+    )
+
+
+def test_provider_spec_from_entity():
+    request = ProviderDataSourceRequest(
+        name="prov_kb",
+        project_name="p",
+        description="d",
+        project_space_visible=True,
+        provider_name="acme",
+        toolkit_id="tk",
+        settings={"a": 1},
+    )
+    spec = ProviderDatasourceSpec.from_entity(request)
+    assert (spec.name, spec.project_name, spec.setting_id) == ("prov_kb", "p", None)
+    assert spec.shared_with_project is True and spec.description == "d"
+    assert (spec.provider_name, spec.toolkit_id, spec.settings) == (
+        "acme",
+        "tk",
+        {"a": 1},
+    )
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {"type": "knowledge_base_sharepoint", "site_url": "http://x"},
+        {
+            "type": "knowledge_base_sharepoint",
+            "site_url": "https://x",
+            "max_file_size_mb": 501,
+        },
+        {
+            "type": "knowledge_base_sharepoint",
+            "site_url": "https://x",
+            "max_file_size_mb": 0,
+        },
+        {"type": "svn", "link": ""},
+        {"type": "svn", "link": "x" * 1001},
+        {"type": "knowledge_base_xray", "jql": ""},
+        {
+            "type": "provider",
+            "provider_name": "p",
+            "toolkit_id": "t",
+            "settings": {"name": "x"},
+        },
+        {
+            "type": "provider",
+            "provider_name": "p",
+            "toolkit_id": "t",
+            "settings": {"setting_id": "x"},
+        },
+        {
+            "type": "provider",
+            "provider_name": "p",
+            "toolkit_id": "t",
+            "setting_id": "int",
+        },
+    ],
+)
+def test_sdk_constraints_and_reserved_keys_rejected_offline(raw):
+    base = {"name": "ds_one", "project_name": "p", "description": "d"}
+    with pytest.raises(ValidationError):
+        TypeAdapter(DatasourceSpec).validate_python({**base, **raw})
+
+
+# ---- offline, name-based literal-secret rejection for provider settings ----
+
+_LITERAL = "s3cr3t-value-xyz"
+
+
+_HIDE = ConfigDict(hide_input_in_errors=True)  # what the envelope applies
+
+
+def _provider_raw(settings):
+    return {
+        "type": "provider",
+        "name": "prov_ds",
+        "project_name": "p",
+        "description": "d",
+        "provider_name": "acme",
+        "toolkit_id": "tk",
+        "settings": settings,
+    }
+
+
+@pytest.mark.parametrize(
+    "settings,path",
+    [
+        ({"api_key": _LITERAL}, "settings.api_key"),
+        ({"apiKey": _LITERAL}, "settings.apiKey"),
+        ({"password": _LITERAL}, "settings.password"),
+        ({"client_secret": _LITERAL}, "settings.client_secret"),
+        ({"auth": {"api_key": _LITERAL}}, "settings.auth.api_key"),
+        ({"creds": {"token": [_LITERAL]}}, "settings.creds.token[0]"),
+        ({"X-Private-Key": _LITERAL}, "settings.X-Private-Key"),
+        ({"AWSAccessKey": _LITERAL}, "settings.AWSAccessKey"),
+        ({"vault": {"password": {"value": _LITERAL}}}, "settings.vault.password.value"),
+    ],
+)
+def test_provider_literal_secret_rejected_offline_naming_path_not_value(settings, path):
+    with pytest.raises(ValidationError) as ei:
+        TypeAdapter(DatasourceSpec, config=_HIDE).validate_python(
+            _provider_raw(settings)
+        )
+    text = str(ei.value)
+    assert path in text and "prov_ds" in text
+    assert _LITERAL not in text and _LITERAL not in repr(ei.value)
+    assert _LITERAL not in str(ei.value.errors(include_input=False))
+
+
+@pytest.mark.parametrize("meta", [{"kind": "datasource", "name": "prov_ds"}, None])
+def test_provider_literal_secret_rejected_through_document_envelope(meta):
+    meta = meta or DocumentMeta(kind=DocumentKind.DATASOURCE, name="prov_ds")
+    with pytest.raises(ValidationError) as ei:
+        Document(
+            version="v1",
+            meta=meta,
+            spec=_provider_raw({"api_key": _LITERAL}),
+        )
+    assert "settings.api_key" in str(ei.value)
+    assert _LITERAL not in str(ei.value) and _LITERAL not in repr(ei.value)
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"api_key": "env:ACME_KEY"},
+        {"auth": {"password": "env:ACME_PW"}},
+        {"tokens": ["env:A", "env:B"]},
+        {"key_prefix": "abc-"},
+        {"monkey": "banana"},
+        {"tokenizer": "cl100k"},
+        {"region": "eu-west-1"},
+        {"api_key": ""},
+        {"password": 1234},
+        {"token": True, "secret": None},
+        {"max_tokens": 5, "keys": ["a", "b"]},
+    ],
+)
+def test_provider_secret_named_settings_accepted_when_safe(settings):
+    spec = TypeAdapter(DatasourceSpec).validate_python(_provider_raw(settings))
+    assert spec.settings == settings
+
+
+def test_literal_under_non_heuristic_name_passes_offline_but_fails_at_plan_apply():
+    from codemie_iac.plan_apply.credentials import EnvCredentialResolver
+    from codemie_iac.plan_apply.errors import UnresolvableCredentialError
+
+    doc = Document(
+        version="v1",
+        meta=DocumentMeta(kind=DocumentKind.DATASOURCE, name="prov_ds"),
+        spec=_provider_raw({"pat": _LITERAL}),
+    )
+    resolver = EnvCredentialResolver(
+        provider_secret_lookup=lambda provider_name, toolkit_id: ["pat"]
+    )
+    with pytest.raises(UnresolvableCredentialError) as ei:
+        resolver.collect_refs(doc.spec)
+    assert "pat" in ei.value.reason and _LITERAL not in str(ei.value)
+
+
+@pytest.mark.parametrize("type_", list(_NEW_KINDS))
+def test_secret_named_setting_check_does_not_affect_other_kinds(type_):
+    _, required, _ = _NEW_KINDS[type_]
+    # Other kinds forbid unknown keys, but must never fail on the secret rule.
+    raw = _raw(type_, **required)
+    assert _document(raw).spec.type == type_
+
+
+@pytest.mark.parametrize("field", ["cron_expression", "timezone"])
+def test_provider_schedule_fields_are_rejected(field):
+    value = "0 0 * * *" if field == "cron_expression" else "UTC"
+    with pytest.raises(ValidationError, match="not supported for provider"):
+        _document({**_provider_raw({"region": "eu"}), field: value})
+
+
+@pytest.mark.parametrize(
+    "bad", ["env:my-region", "env:MY.VAR", "ENV:FOO", "env:FOO ", " env:FOO", "env:"]
+)
+def test_provider_setting_starting_with_env_but_malformed_is_rejected(bad):
+    with pytest.raises(ValidationError, match="not a valid reference") as ei:
+        _document(_provider_raw({"region": bad}))
+    assert "settings.region" in str(ei.value)
+
+
+def test_provider_setting_malformed_reference_is_found_in_containers():
+    with pytest.raises(ValidationError, match=r"settings\.opts\[1\]"):
+        _document(_provider_raw({"opts": ["env:OK", "env:no-good"]}))
+
+
+def test_provider_setting_valid_reference_and_plain_text_are_accepted():
+    doc = _document(_provider_raw({"region": "env:REGION", "note": "environment"}))
+    assert doc.spec.settings["note"] == "environment"
+
+
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("api_key", True),
+        ("apiKey", True),
+        ("clientSecret", True),
+        ("access_token", True),
+        ("password", True),
+        ("pwd", False),
+        ("pass", False),
+        ("key", False),
+        ("jwt", False),
+        ("primary_key", False),
+        ("region", False),
+    ],
+)
+def test_secret_name_vectors_match_the_backend_exporter(name, expected):
+    # Shared vectors for the exporter's copy of the heuristic. Names it does not
+    # recognise are covered by the schema check at plan/apply.
+    from codemie_iac.specs.datasource import _looks_secret
+
+    assert _looks_secret(name) is expected

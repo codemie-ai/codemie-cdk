@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Any
+
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from codemie_sdk.builders.workflow.definition import WorkflowDefinition
@@ -19,6 +21,7 @@ from codemie_sdk.models.assistant import MCPServerConfig
 
 from ..credentials import CredentialRef
 from .assistant import MCPServerConfigSpec
+from .datasource import _literal_secret_paths
 from .integration import CredentialRefEntry
 
 
@@ -71,11 +74,13 @@ class WorkflowSpec(BaseModel):
 
     workflow: WorkflowDefinition
     credential_values: list[CredentialRefEntry] = Field(default_factory=list)
+    start_hint: str | None = None
 
     @model_validator(mode="after")
     def _check_auth_tokens_are_reference_shaped(self) -> "WorkflowSpec":
         for assistant in self.workflow.assistants.values():
             for server in assistant.mcp_servers:
+                self._check_auth_config(assistant, server)
                 token = server.config.auth_token if server.config else None
                 if token is None:
                     continue
@@ -89,6 +94,17 @@ class WorkflowSpec(BaseModel):
                         "instead of embedding the secret"
                     ) from exc
         return self
+
+    @staticmethod
+    def _check_auth_config(assistant: Any, server: Any) -> None:
+        auth_config = server.config.auth_config if server.config else None
+        paths = list(_literal_secret_paths(auth_config or {}, "auth_config"))
+        if paths:
+            raise ValueError(
+                f"assistant {assistant.id!r} MCP server {server.name!r}: "
+                f"secret-looking setting(s) {', '.join(paths)} must be env: "
+                "references, not literal values"
+            )
 
     @classmethod
     def from_entity(cls, workflow: WorkflowDefinition) -> "WorkflowSpec":

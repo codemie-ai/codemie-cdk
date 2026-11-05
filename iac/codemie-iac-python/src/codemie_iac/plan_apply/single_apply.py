@@ -62,7 +62,12 @@ from pydantic import BaseModel, ConfigDict, computed_field
 
 from ..credentials import CredentialRef
 from ..envelope import Document, DocumentKind
-from .credentials import MCP_REF_FIELDS, EnvCredentialResolver, SecretValue
+from .credentials import (
+    MCP_REF_FIELDS,
+    EnvCredentialResolver,
+    ProviderSecretLookup,
+    SecretValue,
+)
 from .bulk_create import (
     ResolveContext,
     build_resolved,
@@ -77,7 +82,7 @@ from .guards import (
     guard_project,
     guard_supported,
 )
-from .kinds import adapter_for
+from .kinds import adapter_for, created_id
 from .lookup import NameLookup
 
 __all__ = [
@@ -103,6 +108,8 @@ REFERENCE_FIELDS = frozenset(
 #: Skill categories are a fixed list of values, not Category entities.
 _VALUE_CATEGORY_KINDS = frozenset({DocumentKind.SKILL})
 _ID_LIST_FIELDS = frozenset({"categories", "assistant_ids"})
+
+
 _INTEGRATION_FIELDS = frozenset({"toolkits", "mcp_servers"})
 #: Comparable fields the live view may legitimately omit (the timezone is only
 #: exposed alongside a schedule); authored but absent means ``CannotCompare``.
@@ -125,8 +132,13 @@ _NESTED_DATASOURCE_KEYS = (
     "azure_devops_wiki",
     "azure_devops_work_item",
     "xwiki",
+    "svn",
+    "sharepoint",
+    "xray",
+    "provider",
 )
 _WORKFLOW_FIELDS = {"name", "description", "mode", "shared", "icon_url"}
+_EMBEDDING_MODEL_TYPES = frozenset({"knowledge_base_sharepoint"})
 
 
 class Difference(BaseModel):
@@ -209,6 +221,20 @@ def _flatten_live(live: Mapping[str, Any]) -> dict[str, Any]:
                     flat[name] = value
     if "google_doc_link" in flat:
         flat.setdefault("google_doc", flat["google_doc_link"])
+    if flat.get("type") in _EMBEDDING_MODEL_TYPES:
+        # The backend stores the model at the top level as ``embeddings_model``;
+        # these documents call it ``embedding_model``.
+        flat.setdefault("embedding_model", flat.get("embeddings_model"))
+    if isinstance(flat.get("provider"), Mapping):
+        # Provider settings are split server-side into base and create params.
+        provider = flat["provider"]
+        flat.setdefault(
+            "settings",
+            {
+                **(provider.get("base_params") or {}),
+                **(provider.get("create_params") or {}),
+            },
+        )
     return flat
 
 
@@ -216,6 +242,7 @@ def _document_values(document: Document, all_fields: bool = False) -> dict[str, 
     spec = document.spec
     if document.meta.kind is DocumentKind.WORKFLOW:
         values = spec.workflow.model_dump(mode="json", include=_WORKFLOW_FIELDS)
+        values["start_hint"] = spec.start_hint
         if all_fields:
             values["yaml_config"] = "workflow"  # always a reference field
         return values
@@ -253,6 +280,46 @@ def _credential_findings(
     if refs:
         field = "mcp_servers" if hasattr(spec, "mcp_servers") else "yaml_config"
         findings.append(_credential_finding(field, refs, resolver))
+    token = getattr(spec, "access_token", None)
+    if token is not None:
+        findings.append(_credential_finding("access_token", [token], resolver))
+    return findings
+
+
+def _datasource_secret_view(spec: Any, settings: Any) -> SimpleNamespace:
+    """The spec attributes the datasource secret table reads, nothing else."""
+    return SimpleNamespace(
+        type=getattr(spec, "type", None),
+        name=getattr(spec, "name", None),
+        provider_name=getattr(spec, "provider_name", None),
+        toolkit_id=getattr(spec, "toolkit_id", None),
+        settings=settings,
+    )
+
+
+def _settings_findings(
+    document: Document,
+    live_view: Mapping[str, Any],
+    resolver: EnvCredentialResolver,
+) -> list[Difference | CannotCompare]:
+    """Provider ``settings``, compared one key at a time: a key holding an
+    ``env:`` reference, or masked on the live side, is reported on its own and
+    never hides the other keys."""
+    spec = document.spec
+    settings = getattr(spec, "settings", None)
+    if not settings or "settings" not in live_view:
+        return []
+    live_settings = live_view["settings"] or {}
+    findings: list[Difference | CannotCompare] = []
+    for key, value in settings.items():
+        field = f"settings.{key}"
+        refs = resolver.collect_refs(_datasource_secret_view(spec, {key: value}))
+        if refs:
+            findings.append(_credential_finding(field, refs, resolver))
+            continue
+        finding = _compare_field(field, value, live_settings.get(key))
+        if finding is not None:
+            findings.append(finding)
     return findings
 
 
@@ -486,6 +553,7 @@ def diff(
     credential_fields = {f.field for f in findings}
     unresolvable = {f.field for f in findings if _UNRESOLVABLE in f.reason}
     handled = {f.field for f in findings} | _reference_fields(document) | policy.deny
+    handled.add("settings")  # compared per key below
     for field, document_value in _document_values(document).items():
         if field in handled or field not in policy.comparable or field not in live_view:
             continue
@@ -494,6 +562,7 @@ def diff(
         finding = _compare_field(field, document_value, live_view[field])
         if finding is not None:
             findings.append(finding)
+    findings.extend(_settings_findings(document, live_view, resolver))
     findings.extend(_unobservable_findings(document, live_view, policy))
     findings.extend(
         _reference_findings(
@@ -541,7 +610,8 @@ class _PlanCredentials:
     def revealed_values(self) -> frozenset[str]:
         return self._inner.revealed_values()
 
-    collect_refs = staticmethod(EnvCredentialResolver.collect_refs)
+    def collect_refs(self, spec: Any) -> list[CredentialRef]:
+        return self._inner.collect_refs(spec)
 
 
 class ApplyResult(BaseModel):
@@ -559,9 +629,18 @@ class ApplyResult(BaseModel):
 class SingleEntityPlanner:
     """Plans (and applies) one document against one live entity."""
 
-    def __init__(self, client: Any, credentials: EnvCredentialResolver | None = None):
+    def __init__(
+        self,
+        client: Any,
+        credentials: EnvCredentialResolver | None = None,
+        provider_secret_lookup: ProviderSecretLookup | None = None,
+    ):
         self._client = client
         self._credentials = credentials or EnvCredentialResolver()
+        if provider_secret_lookup is not None:
+            self._credentials = self._credentials.with_provider_secret_lookup(
+                provider_secret_lookup
+            )
 
     def _plan_credentials(self) -> "_PlanCredentials":
         return _PlanCredentials(self._credentials)
@@ -648,4 +727,6 @@ class SingleEntityPlanner:
             raise rejection
         if entity_id is not None:
             return ApplyResult(id=entity_id, created=False)
-        return ApplyResult(id=adapter.extract_id(response), created=True)
+        return ApplyResult(
+            id=created_id(adapter, self._client, document, response), created=True
+        )

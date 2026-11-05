@@ -152,10 +152,23 @@ class FakeDatasources(_Listing, FakeService):
         "create": {"message": "indexing started"},
         "update": {"message": "ok"},
         "get": SimpleNamespace(id="ds-1"),
+        "list": [],
+        "create_provider_datasource": {"message": "indexing started"},
+        "update_provider_datasource": {"message": "ok"},
     }
 
     def create(self, request):
         return self._call("create", request)
+
+    def create_provider_datasource(
+        self, toolkit_id=None, provider_name=None, request=None
+    ):
+        return self._call(
+            "create_provider_datasource", toolkit_id, provider_name, request
+        )
+
+    def update_provider_datasource(self, index_info_id, request):
+        return self._call("update_provider_datasource", index_info_id, request)
 
     def update(self, datasource_id, request, files=None):
         return self._call("update", datasource_id, request, files=files)
@@ -214,6 +227,9 @@ class FakeIntegrations(FakeService):
     def list_available(self, scope="visible_to_user"):
         self.calls.append(Call("list_available", (), {}))
         return list(self._created)
+
+    def get_by_alias(self, alias, setting_type=None):
+        return self._call("get_by_alias", alias, setting_type=setting_type)
 
     def list(self, setting_type=None, page=0, per_page=10, **kw):
         self.calls.append(Call("list", (), {"setting_type": setting_type}))

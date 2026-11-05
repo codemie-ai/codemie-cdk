@@ -13,12 +13,14 @@
 # limitations under the License.
 
 import pytest
+from codemie_sdk.models.datasource import UpdateProviderDataSourceRequest
 from codemie_sdk.exceptions import NotFoundError
 from codemie_sdk.models.assistant import AssistantCreateRequest, AssistantUpdateRequest
 from codemie_sdk.models.categories import CategoryCreateRequest
 from codemie_sdk.models.datasource import (
     BaseDataSourceRequest,
     CodeDataSourceRequest,
+    DataSource,
 )
 from codemie_sdk.models.integration import Integration, IntegrationType
 from codemie_sdk.models.skill import SkillCreateRequest
@@ -34,6 +36,8 @@ from codemie_iac.plan_apply.kinds import (
     DATASOURCE_ADAPTERS,
     INTEGRATION_LIST_CAP,
     KindAdapter,
+    _complete_body,
+    _provider_update_body,
     adapter_for,
 )
 from codemie_iac.specs.assistant import AssistantSpec
@@ -43,7 +47,7 @@ from codemie_iac.specs.integration import IntegrationSpec
 from codemie_iac.specs.skill import SkillSpec
 from codemie_iac.specs.workflow import WorkflowSpec
 
-from .fakes import FakeClient, FakeIntegrations, FakeSkills
+from .fakes import FakeClient, FakeDatasources, FakeIntegrations, FakeSkills
 
 
 def _doc(kind, name, spec):
@@ -328,11 +332,20 @@ DS_CASES = {
         project="p",
     ),
     "knowledge_base_xwiki": dict(type="knowledge_base_xwiki", space="s", wiki="w"),
+    "knowledge_base_xray": {
+        "type": "knowledge_base_xray",
+        "jql": "project = X",
+        "embedding_model": "e",
+    },
 }
+
+# Types whose update must read live state first (backend PUT overwrites omitted
+# fields), so they are covered by dedicated tests instead of DS_CASES.
+LIVE_AWARE_TYPES = {"svn", "knowledge_base_sharepoint", "provider"}
 
 
 def test_datasource_table_covers_every_spec_type_except_file():
-    assert set(DATASOURCE_ADAPTERS) == set(DS_CASES)
+    assert set(DATASOURCE_ADAPTERS) == set(DS_CASES) | LIVE_AWARE_TYPES
     assert "knowledge_base_file" not in DATASOURCE_ADAPTERS
 
 
@@ -345,7 +358,8 @@ def test_datasource_create_and_update_send_complete_bodies(ds_type):
     response = adapter.create(client, doc, {})
     adapter.update(client, doc, "ds-7", {})
 
-    create_call, update_call = client.datasources.calls
+    (create_call,) = client.datasources.calls_to("create")
+    (update_call,) = client.datasources.calls_to("update")
     request = create_call.args[0]
     assert request.type.value == ds_type
     body = request.model_dump(by_alias=True, exclude_none=True)
@@ -376,3 +390,199 @@ def test_file_datasource_is_not_adaptable():
     doc = _datasource(type="knowledge_base_file")
     with pytest.raises(ApplyError):
         adapter_for(doc)
+
+
+def _live_ds(index_type, **fields):
+    payload = {
+        "id": "ds-7",
+        "project_name": "proj",
+        "repo_name": "ds",
+        "index_type": index_type,
+        "created_by": {"user_id": "u", "username": "x", "name": "n"},
+        "update_date": "2026-01-01T00:00:00",
+        "user_abilities": [],
+    }
+    payload.update(fields)
+    return DataSource.model_validate(payload)
+
+
+def _live_svn(**fields):
+    # The platform stores an SVN datasource under a code index type.
+    return _live_ds("code", vcs_type="svn", branch="trunk", **fields)
+
+
+def _client_with_live(live):
+    return FakeClient(datasources=FakeDatasources(get=live))
+
+
+def test_svn_update_without_hazard_fields_sends_live_values():
+    live = _live_svn(
+        link="https://svn/x",
+        prompt="live prompt",
+        files_filter="*.c",
+        docs_generation=True,
+        project_space_visible=True,
+    )
+    client = _client_with_live(live)
+    doc = _datasource(type="svn", link="https://svn/x")
+
+    adapter_for(doc).update(client, doc, "ds-7", {})
+
+    assert [c.method for c in client.datasources.calls] == ["get", "update"]
+    body = (
+        client.datasources.calls_to("update")[0]
+        .args[1]
+        .model_dump(by_alias=True, exclude_none=True)
+    )
+    assert body["prompt"] == "live prompt"
+    assert body["filesFilter"] == "*.c"
+    assert body["projectSpaceVisible"] is True
+    assert body["docsGeneration"] is True
+
+
+def test_svn_update_document_values_win_over_live():
+    live = _live_svn(link="l", prompt="live", docs_generation=True)
+    client = _client_with_live(live)
+    doc = _datasource(
+        type="svn",
+        link="l",
+        prompt="mine",
+        docs_generation=False,
+        shared_with_project=False,
+    )
+
+    adapter_for(doc).update(client, doc, "ds-7", {})
+
+    request = client.datasources.calls_to("update")[0].args[1]
+    assert request.prompt == "mine"
+    assert request.docs_generation is False
+    assert request.shared_with_project is False
+
+
+def test_sharepoint_update_always_sends_files_filter():
+    live = _live_ds(
+        "knowledge_base_sharepoint",
+        sharepoint={"site_url": "https://sp/x", "files_filter": "*.docx"},
+    )
+    client = _client_with_live(live)
+    doc = _datasource(type="knowledge_base_sharepoint", site_url="https://sp/x")
+
+    adapter_for(doc).update(client, doc, "ds-7", {})
+
+    request = client.datasources.calls_to("update")[0].args[1]
+    assert request.files_filter == "*.docx"
+
+
+def _provider_doc(**extra):
+    return _datasource(
+        type="provider",
+        provider_name="prov",
+        toolkit_id="tk",
+        settings={"region": "eu"},
+        **extra,
+    )
+
+
+def test_provider_update_always_sends_description_and_visibility():
+    live = _live_ds("provider", description="live d", project_space_visible=True)
+    client = _client_with_live(live)
+    doc = _provider_doc()
+
+    adapter_for(doc).update(client, doc, "ds-7", {})
+
+    call = client.datasources.calls_to("update_provider_datasource")[0]
+    assert call.args[0] == "ds-7"
+    body = call.args[1].to_body()
+    assert body["description"] == "d"
+    assert body["project_space_visible"] is True  # unmanaged -> live value
+    assert body["region"] == "eu"
+
+
+def test_provider_update_uses_resolved_settings_not_refs():
+    client = _client_with_live(
+        _live_ds("provider", description="d", project_space_visible=False)
+    )
+    doc = _provider_doc()
+
+    adapter_for(doc).update(
+        client, doc, "ds-7", {"settings": {"region": "eu", "api_key": "s3cret"}}
+    )
+
+    body = client.datasources.calls_to("update_provider_datasource")[0].args[1]
+    assert body.settings["region"] == "eu" and body.settings["api_key"] == "s3cret"
+
+
+def test_provider_create_uses_query_params_and_returns_no_id():
+    client = FakeClient()
+    doc = _provider_doc()
+    adapter = adapter_for(doc)
+
+    response = adapter.create(client, doc, {})
+
+    call = client.datasources.calls_to("create_provider_datasource")[0]
+    assert call.args[0] == "tk" and call.args[1] == "prov"
+    # name/project_name are typed request fields, merged into the body by the SDK.
+    assert (call.args[2].name, call.args[2].project_name) == ("ds", "proj")
+    assert call.args[2].settings == {"region": "eu"}
+    assert call.args[2].to_body()["name"] == "ds"
+    # Backend POST /v1/index/provider answers BaseResponse(message=...) only.
+    assert adapter.extract_id(response) is None
+    assert adapter.extract_id({"id": "not-an-index-id"}) is None
+
+
+def test_complete_body_fills_unmanaged_hazard_fields_from_live():
+    live = _live_svn(link="l", prompt="live", files_filter="f")
+    doc = _datasource(type="svn", link="l")
+
+    body = _complete_body(doc, {}, live)
+
+    assert body["prompt"] == "live"
+    assert body["files_filter"] == "f"
+
+
+def test_provider_update_without_live_or_authored_hazard_field_fails():
+    doc = _provider_doc()
+    live = _live_ds("provider")  # no description / visibility on the live entity
+    with pytest.raises(ApplyError) as err:
+        _complete_body(doc, {}, live)
+    assert err.value.error_type == "missing_required_field"
+    assert (
+        "project_space_visible" in err.value.reason or "description" in err.value.reason
+    )
+
+
+def test_provider_update_body_carries_name_and_project_for_the_backend():
+    doc = _provider_doc()
+    live = _live_ds("provider", description="d", shared_with_project=False)
+    body = _provider_update_body(doc, {"settings": {"region": "eu"}}, live)
+    sent = UpdateProviderDataSourceRequest(**body).to_body()
+    assert (sent["name"], sent["project_name"]) == ("ds", doc.spec.project_name)
+    assert sent["region"] == "eu"
+
+
+def test_unsupported_datasource_type_still_raises_for_file():
+    doc = _datasource(type="knowledge_base_file")
+    with pytest.raises(ApplyError) as err:
+        adapter_for(doc)
+    assert err.value.error_type == "unsupported_datasource_type"
+
+
+def test_workflow_start_hint_is_sent_and_engine_switches_reach_the_yaml():
+    definition = WorkflowDefinition(
+        name="wf",
+        description="wd",
+        mode=SdkWorkflowMode.SEQUENTIAL,
+        enable_summarization_node=True,
+        messages_limit_before_summarization=40,
+    )
+    doc = _doc(
+        DocumentKind.WORKFLOW,
+        "wf",
+        WorkflowSpec(workflow=definition, start_hint="Describe the task"),
+    )
+    client = FakeClient()
+    adapter_for(doc).create(client, doc, {"project": "proj"})
+    request = client.workflows.calls_to("create_workflow")[0].args[0]
+    assert request.start_hint == "Describe the task"
+    assert "enable_summarization_node: true" in request.yaml_config
+    assert "messages_limit_before_summarization: 40" in request.yaml_config
