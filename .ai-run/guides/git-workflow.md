@@ -40,7 +40,7 @@ The internal sync is stopped. The guides in `.ai-run/guides` are edited in this 
 |---|---|
 | A ticket key as PR title prefix | `fix(import): handle empty response` |
 | `fixed stuff` as a PR title | `<type>(<scope>): <description>` with an allowed type |
-| A Jira URL or an internal hostname in code, docs or a test | `https://codemie.example.com` |
+| A tracker URL or an internal hostname in code, docs or a test | `https://codemie.example.com` |
 | A version change in a release PR for a patch release | The tag names the version. Change `package.json` only for a new `MAJOR.MINOR` line (`docs/RELEASING.md`, "How versions work") |
 | `git add -A` after a local install | Stage named files. Do not stage `package-lock.json` |
 
