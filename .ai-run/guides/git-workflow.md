@@ -51,5 +51,5 @@ The internal sync is stopped. The guides in `.ai-run/guides` are edited in this 
 | `PR Title` check fails | The title does not match Conventional Commits | Edit the title. The check runs again on `edited` |
 | `Internal references` check fails | The tree has an internal reference | Replace it with a placeholder |
 | `Security` check fails on a false positive | A value looks like a secret | Read `.gitleaks.toml` for the stopwords, and ask a maintainer before you add one |
-| `package-lock.json` is untracked after `npm install` | The package keeps no lockfile, and it has no ignore rule | Do not commit it. Delete it, or leave it unstaged |
+| `package-lock.json` is untracked after a local install | The package keeps no lockfile, and it has no ignore rule | Do not commit it. Delete it, or leave it unstaged |
 | `dist/`, `__pycache__/` or a virtualenv is untracked under `iac/codemie-iac-python` | The root `.gitignore` covers agent state only. The Node.js package has its own `.gitignore` | Do not stage these paths |
