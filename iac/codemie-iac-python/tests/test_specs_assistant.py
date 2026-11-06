@@ -306,6 +306,8 @@ def test_assistant_flags_stay_unset_when_the_document_omits_them():
         llm_model_type="gpt",
     )
     assert spec.interactive_enabled is None and spec.enable_image_generation is None
+
+
 # deselected_default_tools: local field (the pinned SDK does not expose it yet)
 def _minimal_spec(**kwargs) -> AssistantSpec:
     return AssistantSpec(
