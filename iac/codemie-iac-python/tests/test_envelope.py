@@ -15,6 +15,7 @@
 import pytest
 from pydantic import ValidationError
 from codemie_iac.envelope import Document, DocumentKind, DocumentMeta, Bundle
+from codemie_iac.serializer import from_yaml, to_yaml
 from codemie_iac.specs.category import CategorySpec
 
 
@@ -128,4 +129,47 @@ def test_document_meta_unhashable_kind_raises_validation_error():
                 "meta": {"kind": ["x"], "name": "n"},
                 "spec": {"name": "c"},
             }
+        )
+
+
+_JIRA_DATASOURCE_DOC = {
+    "version": "v1",
+    "meta": {"kind": "datasource", "name": "kb"},
+    "spec": {
+        "type": "knowledge_base_jira",
+        "name": "kb",
+        "project_name": "p",
+        "description": "d",
+        "jql": "project = X",
+    },
+}
+
+
+def test_datasource_document_validates():
+    """Regression: a valid datasource document crashed with a raw
+    `TypeError: Subscripted generics cannot be used with class and instance
+    checks`, because `DatasourceSpec` is an annotated union and the
+    kind/spec match check ran `isinstance` against it."""
+    doc = Document.model_validate(_JIRA_DATASOURCE_DOC)
+    assert doc.meta.kind is DocumentKind.DATASOURCE
+    assert doc.spec.type == "knowledge_base_jira"
+
+
+def test_datasource_document_round_trips_through_yaml():
+    bundle = Bundle([Document.model_validate(_JIRA_DATASOURCE_DOC)])
+    assert from_yaml(to_yaml(bundle)) == bundle
+
+
+def test_datasource_kind_with_other_kinds_spec_is_rejected():
+    skill_doc = {
+        "version": "v1",
+        "meta": {"kind": "skill", "name": "x"},
+        "spec": {"name": "x", "description": "d", "content": "c", "project": "p"},
+    }
+    skill = Document.model_validate(skill_doc)
+    with pytest.raises(ValidationError, match="requires spec to be"):
+        Document(
+            version="v1",
+            meta=DocumentMeta(kind=DocumentKind.DATASOURCE, name="x"),
+            spec=skill.spec,
         )

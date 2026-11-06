@@ -89,3 +89,36 @@ def test_workflow_spec_accepts_reference_shaped_auth_token_built_directly():
     assert (
         spec.workflow.assistants["a"].mcp_servers[0].config.auth_token == "env:MY_REF"
     )
+
+
+def test_workflow_spec_accepts_a_full_oauth2_auth_config():
+    from codemie_sdk.builders.workflow.definition import WorkflowMCPServer
+
+    auth_config = {
+        "token_url": "https://idp.example/token",
+        "client_id": "cid",
+        "token_delivery": {"method": "header", "name": "Authorization"},
+    }
+    workflow = WorkflowDefinition(
+        name="wf",
+        mode=WorkflowMode.SEQUENTIAL,
+        assistants={
+            "a": WorkflowAssistant(
+                id="a",
+                system_prompt="p",
+                mcp_servers=[
+                    WorkflowMCPServer(
+                        name="m",
+                        config=MCPServerConfig(
+                            url="https://m", auth_config=auth_config
+                        ),
+                    )
+                ],
+            )
+        },
+    )
+    assert WorkflowSpec(workflow=workflow).workflow == workflow
+    literal = {**auth_config, "client_secret": "s3cret-value"}
+    workflow.assistants["a"].mcp_servers[0].config.auth_config = literal
+    with pytest.raises(ValidationError, match="client_secret"):
+        WorkflowSpec(workflow=workflow)

@@ -176,3 +176,131 @@ def test_assistant_rejects_unknown_field():
             llm_model_type="gpt-4o",
             not_a_real_field="oops",
         )
+
+
+# --- fields added for the export round trip -------------------------------------
+
+
+def test_mcp_config_audience_and_auth_config_round_trip_with_secrets_as_refs():
+    config = MCPServerConfig(
+        url="https://mcp/x",
+        audience="api://mcp",
+        auth_config={"client_id": "cid", "client_secret": "s3cret-value"},
+    )
+    spec = MCPServerConfigSpec.from_entity(
+        config, assistant_name="a", server_name="srv"
+    )
+    assert spec.audience == "api://mcp"
+    assert spec.auth_config["client_id"] == "cid"
+    assert CredentialRef(spec.auth_config["client_secret"])  # an env: reference
+    assert "s3cret-value" not in spec.model_dump_json()
+
+
+def test_mcp_config_literal_secret_in_auth_config_is_rejected_without_echo():
+    with pytest.raises(ValidationError) as err:
+        MCPServerConfigSpec(auth_config={"client_secret": "s3cret-value"})
+    assert "client_secret" in str(err.value)
+    assert "s3cret-value" not in str(err.value)
+
+
+def test_mcp_config_env_reference_in_auth_config_is_accepted():
+    spec = MCPServerConfigSpec(auth_config={"client_secret": "env:SRV_SECRET"})
+    assert spec.auth_config == {"client_secret": "env:SRV_SECRET"}
+
+
+def test_toolkit_and_tool_auto_credentials_lookup_are_carried():
+    request = AssistantCreateRequest(
+        name="a",
+        description="d",
+        system_prompt="p",
+        project="proj",
+        llm_model_type="gpt",
+        toolkits=[
+            ToolKitDetails(
+                toolkit="Jira",
+                auto_credentials_lookup=False,
+                tools=[ToolDetails(name="t", auto_credentials_lookup=False)],
+            )
+        ],
+        interactive_enabled=True,
+        enable_image_generation=True,
+        file_attachment_enabled=True,
+    )
+    spec = AssistantSpec.from_entity(request)
+    assert spec.toolkits[0].auto_credentials_lookup is False
+    assert spec.toolkits[0].tools[0].auto_credentials_lookup is False
+    assert (
+        spec.interactive_enabled,
+        spec.enable_image_generation,
+        spec.file_attachment_enabled,
+    ) == (True, True, True)
+
+
+def test_hedging_config_is_carried():
+    from codemie_sdk.models.assistant import HedgingConfig, HedgingToolDetails
+
+    hedging = HedgingConfig(tool=HedgingToolDetails(name="fast"), timeout_ms=300)
+    request = AssistantCreateRequest(
+        name="a",
+        description="d",
+        system_prompt="p",
+        project="proj",
+        llm_model_type="gpt",
+        hedging_config=hedging,
+    )
+    assert AssistantSpec.from_entity(request).hedging_config == hedging
+
+
+_OAUTH2 = {
+    "authorization_url": "https://idp.example/authorize",
+    "token_url": "https://idp.example/token",
+    "client_id": "cid",
+    "client_type": "confidential",
+    "scopes": ["read"],
+    "token_delivery": {"method": "header", "name": "Authorization"},
+}
+_SAML = {
+    "sso_url": "https://idp.example/sso",
+    "entity_id": "sp",
+    "idp_entity_id": "idp",
+    "idp_x509cert": "MIIC-public-certificate",
+    "saml_credential_attribute": "mail",
+    "saml_session_ttl": 3600,
+    "token_delivery": {"method": "header", "name": "Authorization"},
+}
+
+
+@pytest.mark.parametrize("auth_config", [_OAUTH2, _SAML], ids=["oauth2", "saml"])
+def test_full_backend_auth_config_shapes_are_accepted_and_export_unchanged(auth_config):
+    # token_url, token_delivery and saml_credential_attribute hold no secret.
+    assert MCPServerConfigSpec(auth_config=auth_config).auth_config == auth_config
+    spec = MCPServerConfigSpec.from_entity(
+        MCPServerConfig(url="https://mcp/x", auth_config=auth_config),
+        assistant_name="a",
+        server_name="srv",
+    )
+    assert spec.auth_config == auth_config
+
+
+def test_client_secret_in_a_full_oauth2_config_is_still_narrowed():
+    config = {**_OAUTH2, "client_secret": "s3cret-value"}
+    spec = MCPServerConfigSpec.from_entity(
+        MCPServerConfig(url="https://mcp/x", auth_config=config),
+        assistant_name="a",
+        server_name="srv",
+    )
+    assert CredentialRef(spec.auth_config["client_secret"])
+    assert spec.auth_config["token_url"] == _OAUTH2["token_url"]
+    with pytest.raises(ValidationError):
+        MCPServerConfigSpec(auth_config=config)
+
+
+def test_assistant_flags_stay_unset_when_the_document_omits_them():
+    spec = AssistantSpec(
+        name="a",
+        description="d",
+        system_prompt="p",
+        project="proj",
+        llm_model_type="gpt",
+    )
+    assert spec.interactive_enabled is None and spec.enable_image_generation is None
