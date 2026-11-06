@@ -175,6 +175,7 @@ export function normalizeAssistantConfig(assistant: AssistantResource, buildConf
     top_p: assistant.top_p,
     shared: assistant.shared,
     is_react: assistant.is_react,
+    hide_tool_outputs: assistant.hide_tool_outputs || undefined,
     is_global: assistant.is_global,
     icon_url: assistant.icon_url,
     toolkits: normalizeToolkits(assistant.toolkits),

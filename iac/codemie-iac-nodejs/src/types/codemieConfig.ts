@@ -146,6 +146,9 @@ export interface AssistantResource
   toolkits?: IaCToolkit[];
   mcp_servers?: IaCMcpServer[];
 
+  // Declared explicitly: the installed codemie-sdk AssistantCreateParams may predate this field
+  hide_tool_outputs?: boolean; // Hide tool outputs from end users (emitted only when true)
+
   // Optional IaC-specific fields
   config?: string; // Optional build-time config file path
   sub_assistants?: string[]; // Assistant NAMES (resolved → assistant_ids during deployment)
