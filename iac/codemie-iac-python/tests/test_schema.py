@@ -42,8 +42,8 @@ def test_malformed_document_names_json_path():
     assert "meta" in exc.value.json_path
 
 
-def test_assistant_schema_lists_deselected_default_tools_as_optional():
+def test_assistant_schema_lists_disabled_context_tools_as_optional():
     schema = document_json_schema()
     assistant = schema["$defs"]["AssistantSpec"]
-    assert "deselected_default_tools" in assistant["properties"]
-    assert "deselected_default_tools" not in assistant.get("required", [])
+    assert "disabled_context_tools" in assistant["properties"]
+    assert "disabled_context_tools" not in assistant.get("required", [])

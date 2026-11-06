@@ -19,7 +19,7 @@ import { logger } from './logger';
 
 describe('converters', () => {
   describe('assistantResponseToResource', () => {
-    describe('deselected_default_tools', () => {
+    describe('disabled_context_tools', () => {
       const base = {
         id: 'ast-1',
         name: 'A',
@@ -32,17 +32,17 @@ describe('converters', () => {
       it('includes the list when non-empty', () => {
         const result = assistantResponseToResource({
           ...base,
-          deselected_default_tools: ['search_kb'],
+          disabled_context_tools: ['search_kb'],
         } as unknown as Assistant);
-        expect(result).toHaveProperty('deselected_default_tools', ['search_kb']);
+        expect(result).toHaveProperty('disabled_context_tools', ['search_kb']);
       });
 
       it.each([[[]], [undefined], [null]])('omits the key for %p', (value) => {
         const result = assistantResponseToResource({
           ...base,
-          deselected_default_tools: value,
+          disabled_context_tools: value,
         } as unknown as Assistant);
-        expect(result).not.toHaveProperty('deselected_default_tools');
+        expect(result).not.toHaveProperty('disabled_context_tools');
       });
     });
 
@@ -1103,26 +1103,26 @@ describe('converters', () => {
   });
 
   describe('assistantResourceToCreateParams', () => {
-    describe('deselected_default_tools pass-through', () => {
+    describe('disabled_context_tools pass-through', () => {
       const base = { name: 'T', description: 'T', prompt: 'p.md', model: 'gpt-4' };
 
       it('sends a non-empty list', () => {
         const result = assistantResourceToCreateParams(
-          { ...base, deselected_default_tools: ['search_kb', 'search_code_repo'] },
+          { ...base, disabled_context_tools: ['search_kb', 'search_code_repo'] },
           'proj',
           'x'
         );
-        expect(result).toHaveProperty('deselected_default_tools', ['search_kb', 'search_code_repo']);
+        expect(result).toHaveProperty('disabled_context_tools', ['search_kb', 'search_code_repo']);
       });
 
       it('sends an explicit empty list as []', () => {
-        const result = assistantResourceToCreateParams({ ...base, deselected_default_tools: [] }, 'proj', 'x');
-        expect(result).toHaveProperty('deselected_default_tools', []);
+        const result = assistantResourceToCreateParams({ ...base, disabled_context_tools: [] }, 'proj', 'x');
+        expect(result).toHaveProperty('disabled_context_tools', []);
       });
 
       it('omits the key when absent (no defaulting)', () => {
         const result = assistantResourceToCreateParams(base, 'proj', 'x');
-        expect(result).not.toHaveProperty('deselected_default_tools');
+        expect(result).not.toHaveProperty('disabled_context_tools');
       });
     });
 

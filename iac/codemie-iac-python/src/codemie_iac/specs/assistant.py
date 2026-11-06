@@ -434,7 +434,7 @@ class AssistantSpec(BaseModel):
     platform-computed; dropping it silently loses an assistant's configured
     tool-output token limit on round-trip.
 
-    ``deselected_default_tools`` is a locally declared field (not yet in the
+    ``disabled_context_tools`` is a locally declared field (not yet in the
     SDK) and is omitted from the dump when empty.
     """
 
@@ -471,15 +471,15 @@ class AssistantSpec(BaseModel):
     # search_code_repo, search_kb). Declared locally: the pinned
     # codemie-sdk-python does not expose it yet.
     # TODO: raise the codemie-sdk-python floor once a release ships
-    # ``deselected_default_tools`` on ``AssistantRequestBase``.
-    deselected_default_tools: list[str] = Field(default_factory=list)
+    # ``disabled_context_tools`` on ``AssistantRequestBase``.
+    disabled_context_tools: list[str] = Field(default_factory=list)
 
     @model_serializer(mode="wrap")
-    def _omit_empty_deselected_default_tools(self, handler):
+    def _omit_empty_disabled_context_tools(self, handler):
         # Empty means "not set": keep the dump of legacy specs unchanged.
         data = handler(self)
-        if not data.get("deselected_default_tools"):
-            data.pop("deselected_default_tools", None)
+        if not data.get("disabled_context_tools"):
+            data.pop("disabled_context_tools", None)
         return data
 
     @classmethod
@@ -521,7 +521,7 @@ class AssistantSpec(BaseModel):
                 if request.tool_permissions is not None
                 else None
             ),
-            deselected_default_tools=list(
-                getattr(request, "deselected_default_tools", None) or []
+            disabled_context_tools=list(
+                getattr(request, "disabled_context_tools", None) or []
             ),
         )
