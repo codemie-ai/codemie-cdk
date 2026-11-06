@@ -24,7 +24,7 @@ No credentials, private hostnames, ticket keys or personal e-mail addresses in t
 
 ## Merge strategy
 
-The history has no merge commits, and each merged PR is one commit with a `(#N)` suffix. Repository settings were not read, so the strategy is not confirmed. A merge to `main` never releases anything.
+The history has no merge commits. Most merged PRs are one squashed commit with a `(#N)` suffix, but not all: some PRs landed as several commits without the suffix. Repository settings were not read, so the strategy is not confirmed. A merge to `main` never releases anything.
 
 ## Releases
 

@@ -1,6 +1,6 @@
 # Development
 
-Commands are in `quality-gates.md`. Lint and format rules are in `code-quality.md`.
+Commands are in `.ai-run/guides/quality-gates.md`. Lint and format rules are in `.ai-run/guides/standards/code-quality.md`.
 
 ## Naming
 
@@ -77,7 +77,7 @@ No test needs a platform, and there is no end-to-end suite in this repository.
 | Package | Location | Name |
 |---|---|---|
 | Node.js | Beside the source file | `<module>.test.ts` (`testMatch` in `jest.config.ts`) |
-| Python | Flat `tests/` directory | `test_<area>.py` |
+| Python | `tests/` for documents and Specs; `tests/plan_apply/` for the plan and apply engine | `test_<area>.py` |
 
 Coverage excludes `src/cli/**`, so test behaviour through the command modules.
 
@@ -105,7 +105,7 @@ Coverage excludes `src/cli/**`, so test behaviour through the command modules.
 | Assert on a field only | Test the round trip and byte stability (`tests/test_serializer.py`) |
 | A shared global between tests that use credential refs | Call `reset_registry` for a clean collision registry (`credentials.py`) |
 
-Fixtures are local to the test module, except `tests/plan_apply/conftest.py`. Regression tests for review findings keep the finding id in the test name (`tests/test_review_fixes.py`).
+Fixtures are local to the test module, except in `tests/plan_apply/`: `conftest.py`, and the shared modules `fakes.py`, `helpers.py` and `write_helpers.py`. Regression tests for review findings keep the finding id in the test name (`tests/test_review_fixes.py`).
 
 ### Coverage
 
@@ -139,10 +139,11 @@ Do not use these statements as instructions. Check the code.
 | A `compile` script and prompt compilation (Node.js README) | No such script and no compile module in `src/` |
 | A `type-check` script (Node.js README) | The script is `types:check` |
 | "Depends on the local `codemie-sdk-python`" (Python README) | The dependency is a pinned registry version |
+| "Needs `codemie-sdk-python` 0.3.0 or newer" (Python README, "Install") | `pyproject.toml` and `poetry.lock` pin `0.1.707`. The two statements do not agree; check with a maintainer before you change the pin |
 | GitLab CI examples (Node.js README) | They describe a consumer pipeline. This repository uses GitHub Actions |
 
 ## Don't do
 
 - Do not edit `dist/`. `tsup` generates it.
 - Do not change `version` in `package.json` for a patch release. The tag sets it (`docs/RELEASING.md`, "How versions work").
-- Do not call the platform from the Python package.
+- Do not call the platform from the Python package outside `plan_apply/`.

@@ -1,32 +1,46 @@
-# Project
+# Project Context
 
-This repository holds two infrastructure-as-code packages for the CodeMie platform.
+## Project Identity
 
-| Package | Path | Registry name | Language |
-|---------|------|---------------|----------|
-| Node.js CLI and library | `iac/codemie-iac-nodejs` | `@codemieai/cdk` | TypeScript, npm |
-| Python IaC library | `iac/codemie-iac-python` | `codemie-iac-python` (not published) | Python 3.12, Poetry |
+| Field | Value | Source |
+|---|---|---|
+| Project name | CodeMie CDK | `README.md` |
+| Repository/package | `codemie-cdk`; packages `@codemieai/cdk` (`iac/codemie-iac-nodejs`) and `codemie-iac-python` (`iac/codemie-iac-python`, not published) | `iac/codemie-iac-nodejs/package.json`, `iac/codemie-iac-python/pyproject.toml` |
+| Project code/key | none | user decision |
 
-Each package has its own dependencies and CI job. Commands: `quality-gates.md`. Layout: `architecture.md`.
+## Work Item Tracker
+
+| Field | Value |
+|---|---|
+| Provider | Jira for maintainers; GitHub Issues for external contributors (`Closes #N`) |
+| Key/prefix | `EPMCDME-NNNNN` placeholder only. Never write a real key in this repository |
 
 ## Ticket Adapter
 
-- Tracker: Jira.
-- Tool: the `codemie-jira-assistant` CodeMie assistant.
-- Ticket keys look like `EPMCDME-NNNNN`. Use only this placeholder form in files, commits, branches and PRs of this repository. Never write a real key.
-- Lookup, create and comment: call the assistant with the key or the ticket payload.
-- External contributors do not need Jira. They use GitHub Issues, and a PR closes its issue with `Closes #N`.
+**Status**: configured
+**Adapter**: the `codemie-jira-assistant` CodeMie assistant, for maintainers only
+**Lookup**: ask the assistant for the ticket `EPMCDME-NNNNN` with summary, description, acceptance criteria and links
+**Create**: send the assistant the complete story file content and ask it to create the ticket
+**Output**: the ticket key in the form `EPMCDME-NNNNN`
+**Comment**: ask the assistant to add a comment with the given text to the ticket `EPMCDME-NNNNN`
+
+## Source Control And Review
+
+| Field | Value |
+|---|---|
+| Provider | GitHub |
+| Repository remote | `https://github.com/codemie-ai/codemie-cdk` |
+| Default target branch | `main` |
+| Review artifact type | PR |
 
 ## MR Adapter
 
-- Host: GitHub, organisation `codemie-ai`, repository `codemie-cdk`, default branch `main`.
-- Create a pull request with `gh pr create --base main`.
-- The PR title follows Conventional Commits. See `git-workflow.md`.
+**Status**: configured
+**Adapter**: GitHub CLI (`gh`)
+**Instructions**: create the PR with `gh pr create --base main`. The PR title follows Conventional Commits and has no ticket key (`.ai-run/guides/standards/git-workflow.md`)
 
-## Non-goals
+## Complexity Scoring
 
-The monorepo `evaluation/`, `examples/`, `qa-factory` and `docs` content is out of scope for these guides.
-
-## Related repositories
-
-The platform backend, the UI, the SDK and the test harness are separate repositories. A change to a platform catalog (tool names, integration types, credential types) may also need a change in the backend or the SDK. This repository follows them; it does not drive them.
+**Status**: not configured
+**Field**: not configured
+**Format**: not configured

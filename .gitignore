@@ -6,3 +6,4 @@ docs/superpowers/runs/
 .claude/settings.local.json
 .superpowers
 .codegraph/
+docs/superpowers/qa-tasks/

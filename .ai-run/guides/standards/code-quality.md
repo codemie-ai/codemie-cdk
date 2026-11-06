@@ -1,6 +1,6 @@
 # Code Quality
 
-Rules only. Commands are in `quality-gates.md`.
+Rules only. Commands are in `.ai-run/guides/quality-gates.md`.
 
 ## Biome linter (`iac/codemie-iac-nodejs/biome.json`)
 
@@ -53,7 +53,7 @@ The Node.js header conflicts with the Apache 2.0 licence that `iac/codemie-iac-n
 
 | Violation | Fix |
 |---|---|
-| Format failure after an edit | Run the auto-fix commands in `quality-gates.md` |
+| Format failure after an edit | Run the auto-fix commands in `.ai-run/guides/quality-gates.md` |
 | A Python model that accepts unknown fields | Add `model_config = ConfigDict(extra="forbid")` |
 | A `to_yaml` change that adds `exclude_none=True` | Remove it. It breaks the round trip (`iac/codemie-iac-python/src/codemie_iac/serializer.py`) |
 | An internal reference in a test | Use a placeholder such as `https://codemie.example.com` |

@@ -82,6 +82,12 @@ Python package:
 1. Add `specs/<kind>.py` with `extra="forbid"` and `from_entity`.
 2. Add the kind to `DocumentKind`, `_SPEC_BY_KIND` and the `spec` union in `envelope.py`.
 3. Export it from `__init__.py` and add tests.
+4. Register it in each per-kind table of `plan_apply/`: `kinds.ADAPTERS`, `lookup.LIVE_FINDERS`, `bulk_create._RESOLVED_BUILDERS`, `guards._SPEC_NAME_FIELDS`, `field_policy.FIELD_POLICIES`, and the project and reference-edge tables where they apply. `tests/plan_apply/test_kind_tables.py` lists every table and fails when one is missing.
+
+Python datasource type (a new `type` value, not a new kind):
+
+1. Add the Spec class with its `type` literal to the `DatasourceSpec` union in `specs/datasource.py`.
+2. Add its adapter to `kinds.DATASOURCE_ADAPTERS` and its field policy to `field_policy.FIELD_POLICIES`. `test_kind_tables.py` checks that each adapter has a policy.
 
 ## Configuration
 
@@ -92,7 +98,7 @@ The Node.js package reads credentials from the environment through `${VAR}` in `
 | Service | Used by | Through |
 |---|---|---|
 | CodeMie platform API and its auth server | Node.js package | `codemie-sdk` |
-| `codemie_sdk` models | Python package, to build a Spec only. No platform calls | `codemie-sdk-python` |
+| `codemie_sdk` models and services | Python package. Models build a Spec; only `plan_apply/` calls the platform, through the client that the caller passes in | `codemie-sdk-python` |
 | `codemie-ai/ci-workflows` | CI and release | Reusable workflows and `check_version.py` |
 
 | Avoid | Prefer |
@@ -143,3 +149,7 @@ Steps are in `docs/RELEASING.md`. Facts that code changes can break:
 | Version check | `check_version.py` is downloaded from `ci-workflows@main` at run time. It is unpinned, a known exposure (`.github/workflows/publish.yml`, lines 81-84) |
 | Manual dispatch | A real publish needs `dry_run` off, the word `publish` in the `publish` input, and a run from `main` |
 | Python package | Not published. CI checks and builds it only (`docs/RELEASING.md`) |
+
+## Related repositories
+
+The platform backend, the UI, the SDK and the test harness are separate repositories. A change to a platform catalog (tool names, integration types, credential types) may also need a change in the backend or the SDK. This repository follows them; it does not drive them.
