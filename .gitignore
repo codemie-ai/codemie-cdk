@@ -13,5 +13,13 @@ venv/
 .vscode/
 .DS_Store
 
-# Local tooling
-/.codegraph/
+# Agent state and local tooling
+.ai-run/runs/
+.ai-run/sdlc-factory/
+.agents/memory/
+.claude/settings.local.json
+.codegraph/
+.superpowers
+docs/superpowers/tasks/
+docs/superpowers/runs/
+docs/superpowers/qa-tasks/
