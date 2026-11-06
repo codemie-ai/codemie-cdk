@@ -31,6 +31,7 @@ class ReferenceResolutionError(ValueError):
         )
         self.kind = kind
         self.name = name
+        self.ambiguous = ambiguous
 
 
 class ReferenceResolver:

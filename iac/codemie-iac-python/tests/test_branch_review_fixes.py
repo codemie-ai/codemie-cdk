@@ -16,8 +16,7 @@
 (CR-001..CR-007).
 
 These IDs are scoped to that review run and are unrelated to the
-differently-numbered CR-001..CR-012 findings already covered in
-test_review_fixes.py (an earlier review round, reusing the same ID scheme).
+differently-numbered findings of an earlier review round.
 CR-006 (alias-less Integration credential collision) is covered in
 test_specs_simple.py alongside the rest of IntegrationSpec.from_entity's
 tests. CR-007's resolution -- retyping WorkflowMCPServer.config from a bare
