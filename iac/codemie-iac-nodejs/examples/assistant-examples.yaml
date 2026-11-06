@@ -59,6 +59,7 @@
 # - temperature: number
 # - top_p: number
 # - mcp_servers: array
+# - deselected_default_tools: array of strings (see example 7)
 
 # ============================================
 # 1. MINIMAL ASSISTANT
@@ -548,6 +549,14 @@ react_assistant:
 #   - Resolved to UUIDs during deployment
 #   - Sub-assistants are delegated to by main assistant
 
+# deselected_default_tools (OPTIONAL):
+#   - Default tools to switch off for this assistant. Allowed values:
+#     get_repository_file_tree, search_code_repo, search_kb
+#   - Absent or [] means all default tools stay on
+#   - Omitting the key on deploy keeps the value currently set on the platform;
+#     an explicit [] re-enables all default tools
+#   - Names are not validated client-side
+
 # ============================================
 # COMMON PATTERNS
 # ============================================
@@ -568,4 +577,17 @@ react_assistant:
 # - Prefer $ref for tool definitions (cleaner, more maintainable)
 # - Use descriptive names (they're the primary identifier in name-based IaC)
 
+# ============================================
+# 7. DESELECTED DEFAULT TOOLS
+# ============================================
+# Switch off the default datasource tools for this assistant
 
+no_default_tools_assistant:
+  name: No Default Tools Assistant
+  description: Assistant with all default datasource tools switched off
+  prompt: ./prompts/simple.md
+  model: gpt-4o
+  deselected_default_tools:
+    - get_repository_file_tree
+    - search_code_repo
+    - search_kb

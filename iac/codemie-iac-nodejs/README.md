@@ -1293,6 +1293,22 @@ IaC automatically handles deployment order to resolve dependencies:
 
 **💡 Best Practice:** Define resources in the order they're referenced (datasources → sub-assistants → main assistants → workflows) for clarity.
 
+### Deselecting Default Tools (`deselected_default_tools`)
+
+Optional list of default datasource tools to switch off for an assistant. Allowed values: `get_repository_file_tree`, `search_code_repo`, `search_kb`.
+
+```yaml
+assistants:
+  - name: My Assistant
+    deselected_default_tools: [search_kb]
+```
+
+- Absent or `[]` means all default tools are on.
+- Omitting the key on deploy keeps the value currently set on the platform; an explicit `[]` re-enables all default tools.
+- Backup writes the key only when the list is non-empty.
+- Names are not validated client-side.
+- The field is declared locally; raise the `codemie-sdk` version floor once a release ships `deselected_default_tools`.
+
 ### Toolkits for Assistants
 
 Toolkits provide additional capabilities to assistants, such as Git operations, Project Management (Jira/Confluence), and OpenAPI integration.
