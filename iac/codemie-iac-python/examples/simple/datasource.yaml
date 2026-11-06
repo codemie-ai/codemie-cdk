@@ -1,0 +1,14 @@
+# Datasource (code kind): indexes a Git repository as a knowledge base.
+---
+version: v1
+meta:
+  kind: datasource
+  name: my_code_kb
+spec:
+  type: code
+  name: my_code_kb
+  project_name: my-project
+  description: Code knowledge base
+  link: https://github.com/org/repo
+  branch: main
+  index_type: code

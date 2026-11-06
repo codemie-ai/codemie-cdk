@@ -66,8 +66,14 @@ def _category(name="cat"):
     return _doc(DocumentKind.CATEGORY, name, CategorySpec(name=name))
 
 
-def _skill(name="sk", **extra):
-    spec = SkillSpec(name=name, description="d", content="c", project=TARGET, **extra)
+def _skill(name="skill", **extra):
+    spec = SkillSpec(
+        name=name,
+        description="A valid skill description",
+        content="c" * 100,
+        project=TARGET,
+        **extra,
+    )
     return _doc(DocumentKind.SKILL, name, spec)
 
 
@@ -273,7 +279,7 @@ def test_unsupported_kind_variant_fails_preflight_via_adapter(monkeypatch):
 def test_skill_categories_pass_through_as_values():
     client = FakeClient(skills=FakeSkills())
     report = BulkCreator(client).create_all(
-        [_skill("sk", categories=["code_review"])], TARGET
+        [_skill("skill", categories=["code_review"])], TARGET
     )
     assert report.failed is None
     assert client.skills.calls_to("create")[0].args[0].categories == ["code_review"]
@@ -282,7 +288,7 @@ def test_skill_categories_pass_through_as_values():
 def test_unknown_skill_category_fails_before_any_write():
     client = FakeClient(skills=FakeSkills())
     with pytest.raises(ApplyError) as info:
-        BulkCreator(client).create_all([_skill("sk", categories=["nope"])], TARGET)
+        BulkCreator(client).create_all([_skill("skill", categories=["nope"])], TARGET)
     assert info.value.error_type == "unknown_skill_category"
     assert _writes(client) == []
 
@@ -290,8 +296,8 @@ def test_unknown_skill_category_fails_before_any_write():
 def test_skill_categories_are_not_dependencies():
     from codemie_iac.plan_apply.ordering import DependencyGraph
 
-    docs = [_skill("sk", categories=["code_review"])]
-    assert [d.meta.name for d in DependencyGraph(docs).order()] == ["sk"]
+    docs = [_skill("skill", categories=["code_review"])]
+    assert [d.meta.name for d in DependencyGraph(docs).order()] == ["skill"]
 
 
 def test_workflow_assistant_reference_becomes_id_and_project_is_target():

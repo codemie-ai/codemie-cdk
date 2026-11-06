@@ -1,0 +1,24 @@
+# Tool state: a tool is declared once under `tools`; a state with `tool_id`
+# runs it.
+---
+version: v1
+meta:
+  kind: workflow
+  name: node-tool-state
+spec:
+  workflow:
+    name: node-tool-state
+    description: One state that runs a tool
+    mode: Sequential
+    tools:
+      - id: search-issues
+        tool: generic_jira_tool
+        integration_alias: jira-prod
+        tool_args:
+          method: GET
+          relative_url: /rest/api/2/search
+    states:
+      - id: find-issues
+        tool_id: search-issues
+        task: Find open issues
+        next: {}

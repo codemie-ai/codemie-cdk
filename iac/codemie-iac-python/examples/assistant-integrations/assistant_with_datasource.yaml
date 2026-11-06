@@ -1,0 +1,16 @@
+# Assistant using a datasource: `context` names a datasource document (or an
+# existing datasource in the project) and gives the assistant its knowledge.
+---
+version: v1
+meta:
+  kind: assistant
+  name: code-helper
+spec:
+  name: code-helper
+  description: Answers questions about the repository
+  system_prompt: Answer using the indexed repository code.
+  project: my-project
+  llm_model_type: gpt-4o
+  context:
+    - context_type: code
+      name: my_code_kb

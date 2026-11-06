@@ -1,0 +1,18 @@
+# Integration: stored credentials. Values are `env:NAME` references to
+# environment variables read at apply time, never literal secrets.
+---
+version: v1
+meta:
+  kind: integration
+  name: jira-prod
+spec:
+  project_name: my-project
+  alias: jira-prod
+  credential_type: Jira
+  credential_values:
+    - key: url
+      ref: env:JIRA_PROD_URL
+    - key: username
+      ref: env:JIRA_PROD_USERNAME
+    - key: token
+      ref: env:JIRA_PROD_TOKEN

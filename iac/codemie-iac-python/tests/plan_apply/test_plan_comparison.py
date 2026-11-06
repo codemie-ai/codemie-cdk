@@ -166,9 +166,9 @@ def test_real_skill_model_matching_the_document_gives_an_empty_plan():
     live = SkillDetailResponse.model_validate(
         {
             "id": "sk-1",
-            "name": "s",
-            "description": "d",
-            "content": "c",
+            "name": "skill-s",
+            "description": "A valid skill description",
+            "content": "c" * 100,
             "project": TARGET,
             "visibility": "project",
             "createdDate": "2026-01-01T00:00:00",

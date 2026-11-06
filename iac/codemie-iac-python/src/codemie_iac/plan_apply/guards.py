@@ -26,16 +26,19 @@ from ..envelope import Document, DocumentKind
 from .errors import ApplyError
 
 __all__ = [
+    "SPEC_PROJECT_FIELDS",
+    "with_default_project",
     "guard_datasource_identity",
     "guard_name",
     "guard_project",
     "guard_supported",
 ]
 
-#: kind -> name of the spec field that carries the entity's project. Workflows
+#: kind -> name of the spec field that carries the entity's project (``None``
+#: when the document omits it). Workflows
 #: take the target project when written and categories are global, so neither
 #: has one.
-_SPEC_PROJECT_FIELDS = {
+SPEC_PROJECT_FIELDS = {
     DocumentKind.ASSISTANT: "project",
     DocumentKind.SKILL: "project",
     DocumentKind.INTEGRATION: "project_name",
@@ -141,13 +144,26 @@ def _guard_google_document(document: Document, live: Any) -> None:
         )
 
 
+def with_default_project(document: Document, target: str) -> Document:
+    """Return ``document`` with an omitted project set to ``target``.
+
+    A document that names a project is returned as is, so ``guard_project``
+    still refuses one that differs from the target.
+    """
+    field = SPEC_PROJECT_FIELDS.get(document.meta.kind)
+    if field is None or getattr(document.spec, field, None) is not None:
+        return document
+    spec = document.spec.model_copy(update={field: target})
+    return document.model_copy(update={"spec": spec})
+
+
 def guard_project(document: Document, target: str) -> None:
     """Raise ``ApplyError`` if the document names a project other than ``target``.
 
     The request body takes its project from the document, so an entity would
     otherwise be created in (or moved to) a project the run does not target.
     """
-    field = _SPEC_PROJECT_FIELDS.get(document.meta.kind)
+    field = SPEC_PROJECT_FIELDS.get(document.meta.kind)
     project = getattr(document.spec, field, None) if field else None
     if project is not None and project != target:
         raise _error(

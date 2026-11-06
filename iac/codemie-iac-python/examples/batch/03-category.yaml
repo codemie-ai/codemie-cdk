@@ -1,0 +1,9 @@
+# Batch 3/4: a category the assistant below is filed under.
+---
+version: v1
+meta:
+  kind: category
+  name: engineering
+spec:
+  name: engineering
+  description: Engineering team resources

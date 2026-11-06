@@ -91,6 +91,7 @@ def test_apply_without_id_creates_and_returns_new_id():
     client = FakeClient()
     result = _planner(client).apply(_assistant(), None, TARGET)
     assert result == ApplyResult(id="asst-1", created=True)
+    assert result.changed is True
     assert len(client.assistants.calls_to("create")) == 1
     assert client.assistants.calls_to("get") == []
 
@@ -98,7 +99,8 @@ def test_apply_without_id_creates_and_returns_new_id():
 def test_apply_with_empty_plan_sends_no_write():
     client = FakeClient(assistants=FakeAssistants(get=_live()))
     result = _planner(client).apply(_assistant(), "asst-1", TARGET)
-    assert result == ApplyResult(id="asst-1", created=False)
+    assert result == ApplyResult(id="asst-1", created=False, changed=False)
+    assert result.changed is False
     assert [c.method for c in client.assistants.calls] == ["get"]
 
 
@@ -106,6 +108,7 @@ def test_apply_with_difference_updates_with_complete_body():
     client = FakeClient(assistants=FakeAssistants(get=_live(system_prompt="old")))
     result = _planner(client).apply(_assistant(), "asst-1", TARGET)
     assert result == ApplyResult(id="asst-1", created=False)
+    assert result.changed is True
     (call,) = client.assistants.calls_to("update")
     assert call.args[0] == "asst-1"
     assert call.args[1].system_prompt == "p"
@@ -327,7 +330,7 @@ def test_update_does_not_look_the_id_up():
 def test_new_kind_with_empty_plan_sends_no_write(ds_type):
     client = FakeClient(datasources=FakeDatasources(get=_new_live(ds_type)))
     result = _planner(client).apply(_new_doc(ds_type), "ds-7", TARGET)
-    assert result == ApplyResult(id="ds-7", created=False)
+    assert result == ApplyResult(id="ds-7", created=False, changed=False)
     assert _writes_of(client, ds_type) == []
 
 
@@ -738,7 +741,7 @@ def test_omitted_assistant_flags_keep_the_live_values():
     live = _live(interactive_enabled=True, enable_image_generation=True)
     client = FakeClient(assistants=FakeAssistants(get=live))
     result = _planner(client).apply(_assistant(), "asst-1", TARGET)
-    assert result == ApplyResult(id="asst-1", created=False)
+    assert result == ApplyResult(id="asst-1", created=False, changed=False)
     assert client.assistants.calls_to("update") == []
 
 

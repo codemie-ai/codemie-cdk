@@ -1,0 +1,17 @@
+# Sub-workflow state: `workflow_id` runs another workflow. Use the other
+# workflow's platform id.
+---
+version: v1
+meta:
+  kind: workflow
+  name: node-sub-workflow
+spec:
+  workflow:
+    name: node-sub-workflow
+    description: One state that runs another workflow
+    mode: Sequential
+    states:
+      - id: run-child
+        workflow_id: 00000000-0000-0000-0000-000000000000
+        task: Run the child workflow
+        next: {}

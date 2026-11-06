@@ -1,0 +1,20 @@
+# Assistant using an MCP server. Secrets (`auth_token`, secret-like headers
+# or env entries) must be `env:NAME` references.
+---
+version: v1
+meta:
+  kind: assistant
+  name: docs-helper
+spec:
+  name: docs-helper
+  description: Looks things up through an MCP server
+  system_prompt: Use the MCP server to look up documentation.
+  project: my-project
+  llm_model_type: gpt-4o
+  mcp_servers:
+    - name: docs-server
+      enabled: true
+      config:
+        url: https://mcp.example.com/sse
+        type: streamable-http
+        auth_token: env:DOCS_SERVER_AUTH_TOKEN

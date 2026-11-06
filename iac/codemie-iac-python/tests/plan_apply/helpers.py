@@ -129,8 +129,13 @@ def _ctx(bundle=(), created=None, env=None, client=None):
 
 
 def _skill(project):
-    spec = SkillSpec(name="s", description="d", content="c", project=project)
-    return _doc(DocumentKind.SKILL, "s", spec)
+    spec = SkillSpec(
+        name="skill-s",
+        description="A valid skill description",
+        content="c" * 100,
+        project=project,
+    )
+    return _doc(DocumentKind.SKILL, "skill-s", spec)
 
 
 _OTHER_PROJECT_DOCS = {

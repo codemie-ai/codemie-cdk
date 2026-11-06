@@ -56,7 +56,7 @@ from .errors import (
     PlatformRejectionError,
     scrub,
 )
-from .guards import guard_name, guard_project, guard_supported
+from .guards import guard_name, guard_project, guard_supported, with_default_project
 from .kinds import adapter_for, created_id
 from .lookup import EntityKey, NameLookup, Reference
 from .ordering import EDGE_EXTRACTORS, DependencyGraph
@@ -414,7 +414,7 @@ class BulkCreator:
     def create_all(
         self, documents: Iterable[Document], target: str
     ) -> BulkCreateReport:
-        docs = list(documents)
+        docs = [with_default_project(document, target) for document in documents]
         ctx = ResolveContext(NameLookup(docs, target, self._client), self._credentials)
         for check in PREFLIGHT_CHECKS:
             check(docs, ctx)

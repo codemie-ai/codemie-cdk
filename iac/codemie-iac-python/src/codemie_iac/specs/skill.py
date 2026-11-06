@@ -28,10 +28,12 @@ class SkillSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    name: str
-    description: str
-    content: str
-    project: str
+    # Bounds mirror the platform's SkillCreateRequest; the SDK model does not
+    # enforce them, so without them a bad document only fails with a 422.
+    name: str = Field(..., pattern=r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$")
+    description: str = Field(..., min_length=10, max_length=1000)
+    content: str = Field(..., min_length=100)
+    project: str | None = None
     visibility: SkillVisibility | None = SkillVisibility.PROJECT
     categories: list[str] | None = Field(default_factory=list, max_length=3)
     enabled_builtin_subagents: list[str] | None = None
