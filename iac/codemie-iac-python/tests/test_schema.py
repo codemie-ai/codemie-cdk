@@ -47,8 +47,8 @@ def test_assistant_schema_exposes_skill_ids():
 
     assert "skill_ids" in AssistantSpec.model_json_schema()["properties"]
 
-def test_assistant_schema_lists_deselected_default_tools_as_optional():
+def test_assistant_schema_lists_disabled_context_tools_as_optional():
     schema = document_json_schema()
     assistant = schema["$defs"]["AssistantSpec"]
-    assert "deselected_default_tools" in assistant["properties"]
-    assert "deselected_default_tools" not in assistant.get("required", [])
+    assert "disabled_context_tools" in assistant["properties"]
+    assert "disabled_context_tools" not in assistant.get("required", [])

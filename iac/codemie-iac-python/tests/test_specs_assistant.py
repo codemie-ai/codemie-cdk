@@ -335,7 +335,8 @@ def test_skill_ids_round_trip_through_from_entity():
         skill_ids=["s1"],
     )
     assert AssistantSpec.from_entity(request).skill_ids == ["s1"]
-# deselected_default_tools: local field (the pinned SDK does not expose it yet)
+
+# disabled_context_tools: local field (the pinned SDK does not expose it yet)
 def _minimal_spec(**kwargs) -> AssistantSpec:
     return AssistantSpec(
         name="a",
@@ -358,16 +359,16 @@ _LEGACY_DUMP_KEYS = [
 ]  # fmt: skip
 
 
-def test_deselected_default_tools_accepted():
-    spec = _minimal_spec(deselected_default_tools=["search_kb"])
-    assert spec.deselected_default_tools == ["search_kb"]
-    assert spec.model_dump(mode="json")["deselected_default_tools"] == ["search_kb"]
+def test_disabled_context_tools_accepted():
+    spec = _minimal_spec(disabled_context_tools=["search_kb"])
+    assert spec.disabled_context_tools == ["search_kb"]
+    assert spec.model_dump(mode="json")["disabled_context_tools"] == ["search_kb"]
 
 
-def test_deselected_default_tools_omitted_from_dump_when_empty():
-    for spec in (_minimal_spec(), _minimal_spec(deselected_default_tools=[])):
+def test_disabled_context_tools_omitted_from_dump_when_empty():
+    for spec in (_minimal_spec(), _minimal_spec(disabled_context_tools=[])):
         dumped = spec.model_dump(mode="json")
-        assert "deselected_default_tools" not in dumped
+        assert "disabled_context_tools" not in dumped
         assert list(dumped) == _LEGACY_DUMP_KEYS
         assert AssistantSpec.model_validate(dumped) == spec
 
@@ -383,21 +384,21 @@ def _entity(**kwargs) -> AssistantCreateRequest:
     )
 
 
-def test_from_entity_copies_deselected_default_tools_when_sdk_has_it():
+def test_from_entity_copies_disabled_context_tools_when_sdk_has_it():
     request = _entity()
-    object.__setattr__(request, "deselected_default_tools", ["search_kb"])
-    assert AssistantSpec.from_entity(request).deselected_default_tools == ["search_kb"]
+    object.__setattr__(request, "disabled_context_tools", ["search_kb"])
+    assert AssistantSpec.from_entity(request).disabled_context_tools == ["search_kb"]
 
 
 def test_from_entity_treats_missing_or_none_as_empty():
     request = _entity()
-    assert AssistantSpec.from_entity(request).deselected_default_tools == []
-    object.__setattr__(request, "deselected_default_tools", None)
-    assert AssistantSpec.from_entity(request).deselected_default_tools == []
+    assert AssistantSpec.from_entity(request).disabled_context_tools == []
+    object.__setattr__(request, "disabled_context_tools", None)
+    assert AssistantSpec.from_entity(request).disabled_context_tools == []
 
 
-def test_deselected_default_tools_yaml_roundtrip():
-    spec = _minimal_spec(deselected_default_tools=["search_kb", "search_code_repo"])
+def test_disabled_context_tools_yaml_roundtrip():
+    spec = _minimal_spec(disabled_context_tools=["search_kb", "search_code_repo"])
     bundle = Bundle(
         [
             Document(

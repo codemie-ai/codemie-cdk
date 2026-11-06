@@ -441,14 +441,14 @@ document fails with `unresolved_reference` and the entities already created
 stay (apply the remaining documents again, not the whole bundle).
 
 
-`AssistantSpec.deselected_default_tools` lists default datasource tools to
+`AssistantSpec.disabled_context_tools` lists default datasource tools to
 switch off (`get_repository_file_tree`, `search_code_repo`, `search_kb`).
 Empty or absent means all default tools are on, and the key is omitted from
 the YAML when the list is empty:
 
 ```python
 spec = AssistantSpec.from_entity(assistant)
-spec.deselected_default_tools = [
+spec.disabled_context_tools = [
     "get_repository_file_tree",
     "search_code_repo",
     "search_kb",
@@ -457,7 +457,7 @@ spec.deselected_default_tools = [
 
 The field is declared locally and read from
 the request with `getattr`; raise the `codemie-sdk-python` floor once a
-release ships `deselected_default_tools`.
+release ships `disabled_context_tools`.
 
 
 ### Workflow

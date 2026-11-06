@@ -59,7 +59,7 @@
 # - temperature: number
 # - top_p: number
 # - mcp_servers: array
-# - deselected_default_tools: array of strings (see example 7)
+# - disabled_context_tools: array of strings (see example 7)
 
 # ============================================
 # 1. MINIMAL ASSISTANT
@@ -549,7 +549,7 @@ react_assistant:
 #   - Resolved to UUIDs during deployment
 #   - Sub-assistants are delegated to by main assistant
 
-# deselected_default_tools (OPTIONAL):
+# disabled_context_tools (OPTIONAL):
 #   - Default tools to switch off for this assistant. Allowed values:
 #     get_repository_file_tree, search_code_repo, search_kb
 #   - Absent or [] means all default tools stay on
@@ -587,7 +587,7 @@ no_default_tools_assistant:
   description: Assistant with all default datasource tools switched off
   prompt: ./prompts/simple.md
   model: gpt-4o
-  deselected_default_tools:
+  disabled_context_tools:
     - get_repository_file_tree
     - search_code_repo
     - search_kb

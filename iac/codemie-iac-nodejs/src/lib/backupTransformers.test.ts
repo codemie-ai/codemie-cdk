@@ -270,7 +270,7 @@ describe('backupTransformers', () => {
       [['search_kb'], true],
       [[], false],
       [undefined, false],
-    ])('handles deselected_default_tools %p', (tools, present) => {
+    ])('handles disabled_context_tools %p', (tools, present) => {
       const state: StateFile = {
         version: '1.0',
         project: 'test-project',
@@ -283,15 +283,15 @@ describe('backupTransformers', () => {
         description: 'd',
         system_prompt: 'p',
         llm_model_type: 'gpt-4',
-        deselected_default_tools: tools,
+        disabled_context_tools: tools,
       } as unknown as AssistantResponse;
 
       const result = prepareAssistantForYaml(assistant, state, new Map(), new Map());
 
       if (present) {
-        expect(result.deselected_default_tools).toEqual(tools);
+        expect(result.disabled_context_tools).toEqual(tools);
       } else {
-        expect(result).not.toHaveProperty('deselected_default_tools');
+        expect(result).not.toHaveProperty('disabled_context_tools');
       }
     });
 

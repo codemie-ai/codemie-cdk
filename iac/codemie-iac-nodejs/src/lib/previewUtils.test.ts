@@ -23,7 +23,7 @@ jest.mock('./resourceExistenceChecker', () => ({
   checkAssistantExists: jest.fn(),
 }));
 
-describe('previewAssistants deselected_default_tools', () => {
+describe('previewAssistants disabled_context_tools', () => {
   let tempDir: string;
 
   beforeEach(() => {
@@ -53,9 +53,9 @@ describe('previewAssistants deselected_default_tools', () => {
     return sm;
   }
 
-  it('flags an update when only deselected_default_tools changed', async () => {
+  it('flags an update when only disabled_context_tools changed', async () => {
     const sm = makeState();
-    const changed = { ...base, deselected_default_tools: ['search_kb'] };
+    const changed = { ...base, disabled_context_tools: ['search_kb'] };
 
     const [change] = await previewAssistants([changed], loader, sm, client, config);
 

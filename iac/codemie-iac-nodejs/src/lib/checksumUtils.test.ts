@@ -127,9 +127,9 @@ describe('checksumUtils', () => {
   });
 
   describe('calculateAssistantConfigChecksum', () => {
-    describe('deselected_default_tools', () => {
+    describe('disabled_context_tools', () => {
       const legacy: AssistantResource = { name: 'Legacy', description: 'd', prompt: 'p.md', model: 'gpt-4' };
-      // Captured on the code before deselected_default_tools existed
+      // Captured on the code before disabled_context_tools existed
       const LEGACY_HASH = 'c52b689dc51fbf98ea5e55253581816b28ae9da5898f81b0bb824d080fc69e53';
 
       it('keeps the legacy checksum byte-identical', () => {
@@ -137,12 +137,12 @@ describe('checksumUtils', () => {
       });
 
       it('treats an empty list as absent', () => {
-        expect(calculateAssistantConfigChecksum({ ...legacy, deselected_default_tools: [] })).toBe(LEGACY_HASH);
+        expect(calculateAssistantConfigChecksum({ ...legacy, disabled_context_tools: [] })).toBe(LEGACY_HASH);
       });
 
       it('differs for different lists', () => {
-        const a = calculateAssistantConfigChecksum({ ...legacy, deselected_default_tools: ['search_kb'] });
-        const b = calculateAssistantConfigChecksum({ ...legacy, deselected_default_tools: ['search_code_repo'] });
+        const a = calculateAssistantConfigChecksum({ ...legacy, disabled_context_tools: ['search_kb'] });
+        const b = calculateAssistantConfigChecksum({ ...legacy, disabled_context_tools: ['search_code_repo'] });
         expect(a).not.toBe(LEGACY_HASH);
         expect(a).not.toBe(b);
       });
@@ -150,11 +150,11 @@ describe('checksumUtils', () => {
       it('ignores order and duplicates', () => {
         const a = calculateAssistantConfigChecksum({
           ...legacy,
-          deselected_default_tools: ['search_kb', 'search_code_repo'],
+          disabled_context_tools: ['search_kb', 'search_code_repo'],
         });
         const b = calculateAssistantConfigChecksum({
           ...legacy,
-          deselected_default_tools: ['search_code_repo', 'search_kb', 'search_kb'],
+          disabled_context_tools: ['search_code_repo', 'search_kb', 'search_kb'],
         });
         expect(a).toBe(b);
       });
