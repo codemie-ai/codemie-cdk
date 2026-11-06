@@ -7,7 +7,7 @@ The repository holds two independent packages. They share no code and have no wo
 | Package | Path | Role | Talks to the platform |
 |---|---|---|---|
 | `@codemieai/cdk` | `iac/codemie-iac-nodejs` | The `codemie` CLI and a library. Deploys YAML to the platform (`bin` in `package.json`) | Yes, through `codemie-sdk` |
-| `codemie-iac-python` | `iac/codemie-iac-python` | Library. Turns resources into YAML documents and reads them back (`iac/codemie-iac-python/README.md`) | No |
+| `codemie-iac-python` | `iac/codemie-iac-python` | Library. Turns resources into YAML documents, reads them back, and plans or applies them on the platform (`iac/codemie-iac-python/README.md`) | Only `codemie_iac.plan_apply`, through `codemie_sdk` services |
 
 The two packages use different document shapes. The Node.js package reads one `codemie.yaml` with `$import` and `$ref`. The Python package uses `version`/`meta`/`spec` documents (`Document` in `iac/codemie-iac-python/src/codemie_iac/envelope.py`). A file for one package is not valid for the other.
 
@@ -33,6 +33,7 @@ The two packages use different document shapes. The Node.js package reads one `c
 | `src/codemie_iac/schema.py` | JSON Schema and offline validation |
 | `src/codemie_iac/resolver.py` | Lookup by kind and name within one `Bundle` |
 | `src/codemie_iac/credentials.py` | `CredentialRef`, the `env:NAME` reference type |
+| `src/codemie_iac/plan_apply/` | Plan and apply against the platform: bulk create (`BulkCreator`), single-entity plan and apply (`SingleEntityPlanner`), credential resolution (`EnvCredentialResolver`), scrubbed errors. The only module that calls the platform |
 | `src/codemie_iac/__init__.py` | Public API |
 
 ## Data flow: `codemie deploy`
@@ -63,7 +64,7 @@ All functions are in `iac/codemie-iac-nodejs/src`.
 |---|---|
 | A new `new CodeMieClient` call | `createClient` |
 | A command file that imports another command file | Shared code in `src/lib/`. Only `src/index.ts` and `src/cli/index.ts` import the command modules |
-| A network or file call in the Python package | Keep it offline. Resolution works only within the given `Bundle` (`resolver.py`) |
+| A network or file call in the Python package outside `plan_apply/` | Keep it offline. Resolution works only within the given `Bundle` (`resolver.py`). Platform calls go only through the `codemie_sdk` client that the caller passes to `plan_apply` |
 | A Spec that imports `envelope.py` | `envelope.py` imports the specs |
 
 ## Adding a resource kind
@@ -122,7 +123,7 @@ Fetch timeouts are 30 seconds per resource type in `TIMEOUTS_MS` (`lib/constants
 | Package | Policy | Where |
 |---|---|---|
 | Node.js | Range `>=0.1.0 <1.0.0` for `codemie-sdk`, no lockfile | `iac/codemie-iac-nodejs/package.json` |
-| Python | Exact pin `codemie-sdk-python = "0.1.686"`, `poetry.lock` committed. The reason for the pin is unknown | `iac/codemie-iac-python/pyproject.toml` |
+| Python | Exact pin `codemie-sdk-python = "0.1.707"`, `poetry.lock` committed. The reason for the pin is unknown | `iac/codemie-iac-python/pyproject.toml` |
 
 With the wide Node.js range, each install can get a newer SDK. CI reports the installed version (step "Report installed codemie-sdk version" in `.github/workflows/ci.yml`), and a weekly job runs all checks on the newest version in range (`.github/workflows/drift.yml`). When the SDK adds or changes a field, update `lib/converters.ts` and the checksum normalization in `lib/checksumUtils.ts`.
 

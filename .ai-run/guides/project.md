@@ -5,7 +5,7 @@ This repository holds two infrastructure-as-code packages for the CodeMie platfo
 | Package | Path | Registry name | Language |
 |---------|------|---------------|----------|
 | Node.js CLI and library | `iac/codemie-iac-nodejs` | `@codemieai/cdk` | TypeScript, npm |
-| Python document library | `iac/codemie-iac-python` | `codemie-iac-python` (not published) | Python 3.12, Poetry |
+| Python IaC library | `iac/codemie-iac-python` | `codemie-iac-python` (not published) | Python 3.12, Poetry |
 
 Each package has its own dependencies and CI job. Commands: `quality-gates.md`. Layout: `architecture.md`.
 

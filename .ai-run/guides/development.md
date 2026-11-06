@@ -101,11 +101,11 @@ Coverage excludes `src/cli/**`, so test behaviour through the command modules.
 
 | Avoid | Prefer |
 |---|---|
-| A test that depends on the network | Build the document in the test. Everything works offline |
+| A test that depends on the network | Build the document in the test. For `plan_apply`, use the recording fakes of the SDK services (`FakeClient` in `tests/plan_apply/fakes.py`). Everything works offline |
 | Assert on a field only | Test the round trip and byte stability (`tests/test_serializer.py`) |
 | A shared global between tests that use credential refs | Call `reset_registry` for a clean collision registry (`credentials.py`) |
 
-Fixtures are local to the test module. There is no `conftest.py`. Regression tests for review findings keep the finding id in the test name (`tests/test_review_fixes.py`).
+Fixtures are local to the test module, except `tests/plan_apply/conftest.py`. Regression tests for review findings keep the finding id in the test name (`tests/test_review_fixes.py`).
 
 ### Coverage
 

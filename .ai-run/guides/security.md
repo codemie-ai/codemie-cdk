@@ -15,6 +15,8 @@ The Node.js package authenticates through `codemie-sdk`, with client credentials
 | A committed backup | `backups/` has an ignore rule in the package `.gitignore`, because it holds sensitive data |
 | A secret value in a Python document | `CredentialRef` (`env:NAME`). Only the `env` source is known (`credentials.py`, `specs/integration.py`) |
 
+In `plan_apply`, `env:NAME` references are resolved from the environment only at apply time. No secret value goes into a result. A platform rejection becomes `PlatformRejectionError` with a scrubbed message, and the original exception is not kept (`plan_apply/errors.py`). Keep both rules when you change this code. The SDK logs request bodies at `DEBUG` level, credentials included, so the engine raises the `codemie_sdk.utils.http` logger to `INFO` during a write (`iac/codemie-iac-python/README.md`).
+
 Limit: in the Python package, some MCP fields are whole-value matches only. A secret inside a larger string is written as plain text (`iac/codemie-iac-python/README.md`). Do not describe these fields as safe.
 
 The ignore rules for `backups/` and `.env` are in the Node.js package. The root `.gitignore` covers agent state only.
@@ -28,6 +30,7 @@ These commands change or delete resources on a live platform. An agent must not 
 | `codemie destroy` | Must type `destroy`. `--force` skips the prompt (`src/destroy.ts`) |
 | `codemie deploy --prune` | Without the flag, orphans are reported and kept (`src/deploy.ts`) |
 | `codemie deploy --replace-skill-group` | Refuses without `--yes-replace-skills`. Skills get new ids (`src/deploy.ts`) |
+| Python `BulkCreator.create_all`, `SingleEntityPlanner.apply` | No prompt. They create or update entities with the client the caller passes in. They never delete. `plan` makes no write (`iac/codemie-iac-python/README.md`) |
 
 When you change these paths, keep the guard before the first platform call, and add a test for it. Do not make a destructive behaviour the default.
 
