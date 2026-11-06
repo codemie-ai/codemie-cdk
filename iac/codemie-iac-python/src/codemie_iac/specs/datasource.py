@@ -31,7 +31,7 @@ per-kind ``*DatasourceSpec`` classes below.
 """
 
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from itertools import pairwise
 from typing import Annotated, Any, Literal, Union
 
@@ -437,18 +437,53 @@ def _malformed_reference_paths(value: Any, path: str) -> Iterator[str]:
         yield path
 
 
+#: Names that hold a secret in an MCP ``auth_config``. Matched whole: the
+#: backend's required fields (``token_url``, ``token_delivery``,
+#: ``saml_credential_attribute``) hold no secret, which the name heuristic
+#: above would flag.
+AUTH_CONFIG_SECRET_KEYS = frozenset(
+    {
+        "client_secret",
+        "clientsecret",
+        "refresh_token",
+        "access_token",
+        "id_token",
+        "password",
+        "secret",
+        "token",
+        "api_key",
+        "apikey",
+        "private_key",
+        "sp_private_key",
+    }
+)
+
+
+def _is_auth_config_secret(key: Any) -> bool:
+    return str(key).lower() in AUTH_CONFIG_SECRET_KEYS
+
+
 def _literal_secret_paths(
-    value: Any, path: str, under_secret: bool = False
+    value: Any,
+    path: str,
+    under_secret: bool = False,
+    is_secret: Callable[[Any], bool] = _looks_secret,
 ) -> Iterator[str]:
-    """Paths of non-empty, non-reference string leaves under a secret-named key."""
+    """Paths of non-empty, non-reference string leaves under a secret-named key
+    (``is_secret`` decides which names count)."""
     if isinstance(value, dict):
         for key, item in value.items():
             yield from _literal_secret_paths(
-                item, f"{path}.{key}", under_secret or _looks_secret(key)
+                item,
+                f"{path}.{key}",
+                under_secret or is_secret(key),
+                is_secret,
             )
     elif isinstance(value, (list, tuple)):
         for index, item in enumerate(value):
-            yield from _literal_secret_paths(item, f"{path}[{index}]", under_secret)
+            yield from _literal_secret_paths(
+                item, f"{path}[{index}]", under_secret, is_secret
+            )
     elif (
         under_secret
         and isinstance(value, str)

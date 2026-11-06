@@ -102,7 +102,11 @@ from codemie_sdk.models.assistant import (
 )
 
 from ..credentials import CredentialRef
-from .datasource import _is_env_reference, _literal_secret_paths, _looks_secret
+from .datasource import (
+    _is_auth_config_secret,
+    _is_env_reference,
+    _literal_secret_paths,
+)
 
 # CR-008: see module docstring. Declared once and reused by both `env` and
 # `headers` below.
@@ -151,7 +155,7 @@ def _narrow_auth_config(
     if isinstance(value, dict):
         return {
             k: _narrow_auth_config(
-                v, identifier, f"{key}_{k}", under_secret or _looks_secret(k)
+                v, identifier, f"{key}_{k}", under_secret or _is_auth_config_secret(k)
             )
             for k, v in value.items()
         }
@@ -303,7 +307,11 @@ class MCPServerConfigSpec(BaseModel):
     def _no_literal_secrets_in_auth_config(
         cls, value: dict[str, Any] | None
     ) -> dict[str, Any] | None:
-        paths = list(_literal_secret_paths(value or {}, "auth_config"))
+        paths = list(
+            _literal_secret_paths(
+                value or {}, "auth_config", is_secret=_is_auth_config_secret
+            )
+        )
         if paths:
             raise ValueError(
                 f"secret-looking setting(s) {', '.join(paths)} must be env: "
@@ -453,8 +461,8 @@ class AssistantSpec(BaseModel):
     skip_integration_validation: bool | None = False
     tool_permissions: ToolPermissionsConfigSpec | None = None
     hedging_config: HedgingConfig | None = None
-    interactive_enabled: bool = False
-    enable_image_generation: bool | None = False
+    interactive_enabled: bool | None = None
+    enable_image_generation: bool | None = None
     file_attachment_enabled: bool | None = None
 
     @classmethod
@@ -488,8 +496,7 @@ class AssistantSpec(BaseModel):
             ],
             skip_integration_validation=request.skip_integration_validation,
             hedging_config=request.hedging_config,
-            # The SDK request reads a stored null as None; the platform treats it as off.
-            interactive_enabled=bool(request.interactive_enabled),
+            interactive_enabled=request.interactive_enabled,
             enable_image_generation=request.enable_image_generation,
             file_attachment_enabled=request.file_attachment_enabled,
             tool_permissions=(

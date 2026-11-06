@@ -291,6 +291,11 @@ class EnvCredentialResolver:
         self._revealed.add(value)
         return SecretValue(value)
 
+    def provider_secret_keys(self, spec: Any) -> frozenset[str] | None:
+        """Secret setting names of a provider spec per the platform schema, or
+        ``None`` when the schema is unavailable (no lookup, or it failed)."""
+        return _schema_secret_keys(spec, self._provider_secret_lookup)[0]
+
     def collect_refs(self, spec: Any) -> list[CredentialRef]:
         """All distinct credential refs in a spec, in first-seen order."""
         seen: dict[str, CredentialRef] = {}

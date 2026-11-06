@@ -586,3 +586,14 @@ def test_workflow_start_hint_is_sent_and_engine_switches_reach_the_yaml():
     assert request.start_hint == "Describe the task"
     assert "enable_summarization_node: true" in request.yaml_config
     assert "messages_limit_before_summarization: 40" in request.yaml_config
+
+
+def test_code_update_without_branch_keeps_the_stored_branch():
+    # The branch workaround is for svn only: a code update must still be built
+    # with an explicit empty branch so the request accepts it.
+    live = _live_ds("code", code={"link": "https://git/x", "branch": "main"})
+    client = _client_with_live(live)
+    doc = _datasource(type="code", link="https://git/x", description="changed")
+    adapter_for(doc).update(client, doc, "ds-7", {})
+    (call,) = client.datasources.calls_to("update")
+    assert call.args[1].branch is None

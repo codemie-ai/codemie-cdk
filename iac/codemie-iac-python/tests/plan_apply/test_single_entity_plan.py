@@ -265,7 +265,7 @@ _NEW_DS = {
                 "provider_id": "p-1",
                 "toolkit_id": "tk",
                 "base_params": {"region": "eu"},
-                "create_params": {"api_key": "**********"},
+                "create_params": {"api_key": "gAAAAAB-stored-ciphertext"},
             }
         },
         {
@@ -413,7 +413,7 @@ def test_provider_live_state_follows_the_real_datasource_shape():
     assert view["provider"]["toolkit_id"] == "tk"
     assert _flatten_live(view)["settings"] == {
         "region": "eu",
-        "api_key": "**********",
+        "api_key": "gAAAAAB-stored-ciphertext",
     }
     assert _flatten_live(view)["toolkit_id"] == "tk"
 

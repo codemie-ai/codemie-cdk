@@ -224,7 +224,7 @@ def _datasource_body(document: Document, resolved: Resolved) -> dict:
     body.setdefault("project_space_visible", visible)
     # An omitted svn branch is the SDK's default on create and the stored value
     # on update; the request rejects an explicit None.
-    if body.get("branch") is None:
+    if document.spec.type == "svn" and body.get("branch") is None:
         body.pop("branch", None)
     return body
 
@@ -233,7 +233,9 @@ def _datasource_body(document: Document, resolved: Resolved) -> dict:
 #: update must always send them, from the document or else from live state.
 _HAZARD_FIELDS: dict[str, tuple[str, ...]] = {
     "svn": ("prompt", "files_filter", "project_space_visible", "docs_generation"),
-    "knowledge_base_sharepoint": ("files_filter",),
+    # ``auth_type`` is filled from live state so the SDK can see a stored OAuth
+    # type and ask for the token before a reindex is sent.
+    "knowledge_base_sharepoint": ("files_filter", "auth_type"),
     "provider": ("description", "project_space_visible"),
 }
 
@@ -629,12 +631,47 @@ def _live_provider_settings(live: Any) -> dict[str, Any]:
     return out
 
 
-def _provider_update_body(document: Document, resolved: Resolved, live: Any) -> dict:
+def _kept_live_settings(
+    document: Document, live: Any, secret_keys: frozenset[str] | None
+) -> dict[str, Any]:
+    """Live settings the document leaves out, to send back unchanged.
+
+    The backend resets every schema parameter the PUT omits to its default, so
+    the non-secret ones must be sent. A secret must not: a read returns it
+    encrypted, and the backend encrypts whatever secret it receives, so sending
+    it back would encrypt the ciphertext. An omitted secret keeps its stored
+    value. Which keys are secret comes from the platform schema; without it
+    nothing can be sent safely, so the update is refused."""
+    authored = document.spec.settings
+    omitted = {
+        k: v for k, v in _live_provider_settings(live).items() if k not in authored
+    }
+    if secret_keys is None:
+        if omitted:
+            raise ApplyError(
+                "provider_secrets_unknown",
+                "datasource",
+                document.meta.name,
+                "the stored settings "
+                f"{', '.join(sorted(omitted))} are not in the document, and without "
+                "the provider schema (provider_secret_lookup) secret ones cannot be "
+                "told apart; list them in the document or pass a lookup",
+            )
+        return {}
+    return {k: v for k, v in omitted.items() if k not in secret_keys}
+
+
+def _provider_update_body(
+    document: Document,
+    resolved: Resolved,
+    live: Any,
+    secret_keys: frozenset[str] | None = None,
+) -> dict:
     body = _complete_body(document, resolved, live)
-    # The backend resets every schema parameter the PUT omits to its default, so
-    # the live settings fill the keys the document leaves out. A secret comes
-    # back masked, which the platform reads as "keep the stored value".
-    body["settings"] = {**_live_provider_settings(live), **body.get("settings", {})}
+    body["settings"] = {
+        **_kept_live_settings(document, live, secret_keys),
+        **body.get("settings", {}),
+    }
     identity = {
         field: getattr(document.spec, field) for field in _PROVIDER_UPDATE_IDENTITY
     }
@@ -646,9 +683,10 @@ def _provider_create(client: Any, document: Document, resolved: Resolved) -> Any
     request = _build(
         ProviderDataSourceRequest, _datasource_body(document, resolved), document
     )
-    return client.datasources.create_provider_datasource(
-        request.toolkit_id, request.provider_name, request
-    )
+    with _no_request_body_log():
+        return client.datasources.create_provider_datasource(
+            request.toolkit_id, request.provider_name, request
+        )
 
 
 def _provider_update(
@@ -657,14 +695,16 @@ def _provider_update(
     entity_id: str,
     resolved: Resolved,
     changed: frozenset[str] | None = None,
+    secret_keys: frozenset[str] | None = None,
 ) -> Any:
     live = client.datasources.get(entity_id)
     request = _build(
         UpdateProviderDataSourceRequest,
-        _provider_update_body(document, resolved, live),
+        _provider_update_body(document, resolved, live, secret_keys),
         document,
     )
-    return client.datasources.update_provider_datasource(entity_id, request)
+    with _no_request_body_log():
+        return client.datasources.update_provider_datasource(entity_id, request)
 
 
 _PROVIDER_ADAPTER = KindAdapter(

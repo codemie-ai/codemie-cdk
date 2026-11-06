@@ -21,7 +21,7 @@ from codemie_sdk.models.assistant import MCPServerConfig
 
 from ..credentials import CredentialRef
 from .assistant import MCPServerConfigSpec
-from .datasource import _literal_secret_paths
+from .datasource import _is_auth_config_secret, _literal_secret_paths
 from .integration import CredentialRefEntry
 
 
@@ -98,7 +98,11 @@ class WorkflowSpec(BaseModel):
     @staticmethod
     def _check_auth_config(assistant: Any, server: Any) -> None:
         auth_config = server.config.auth_config if server.config else None
-        paths = list(_literal_secret_paths(auth_config or {}, "auth_config"))
+        paths = list(
+            _literal_secret_paths(
+                auth_config or {}, "auth_config", is_secret=_is_auth_config_secret
+            )
+        )
         if paths:
             raise ValueError(
                 f"assistant {assistant.id!r} MCP server {server.name!r}: "

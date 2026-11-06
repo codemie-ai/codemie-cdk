@@ -710,7 +710,15 @@ class SingleEntityPlanner:
             if entity_id is None:
                 response = adapter.create(self._client, document, resolved)
             else:
-                adapter.update(self._client, document, entity_id, resolved, changed)
+                extra = {}
+                if getattr(document.spec, "type", None) == "provider":
+                    # The schema says which stored settings are secrets.
+                    extra["secret_keys"] = self._credentials.provider_secret_keys(
+                        document.spec
+                    )
+                adapter.update(
+                    self._client, document, entity_id, resolved, changed, **extra
+                )
         except PLATFORM_ERRORS as exc:
             # Raised below, outside the handler: the SDK error carries the
             # request body, resolved credentials included.

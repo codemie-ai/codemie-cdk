@@ -249,3 +249,58 @@ def test_hedging_config_is_carried():
         hedging_config=hedging,
     )
     assert AssistantSpec.from_entity(request).hedging_config == hedging
+
+
+_OAUTH2 = {
+    "authorization_url": "https://idp.example/authorize",
+    "token_url": "https://idp.example/token",
+    "client_id": "cid",
+    "client_type": "confidential",
+    "scopes": ["read"],
+    "token_delivery": {"method": "header", "name": "Authorization"},
+}
+_SAML = {
+    "sso_url": "https://idp.example/sso",
+    "entity_id": "sp",
+    "idp_entity_id": "idp",
+    "idp_x509cert": "MIIC-public-certificate",
+    "saml_credential_attribute": "mail",
+    "saml_session_ttl": 3600,
+    "token_delivery": {"method": "header", "name": "Authorization"},
+}
+
+
+@pytest.mark.parametrize("auth_config", [_OAUTH2, _SAML], ids=["oauth2", "saml"])
+def test_full_backend_auth_config_shapes_are_accepted_and_export_unchanged(auth_config):
+    # token_url, token_delivery and saml_credential_attribute hold no secret.
+    assert MCPServerConfigSpec(auth_config=auth_config).auth_config == auth_config
+    spec = MCPServerConfigSpec.from_entity(
+        MCPServerConfig(url="https://mcp/x", auth_config=auth_config),
+        assistant_name="a",
+        server_name="srv",
+    )
+    assert spec.auth_config == auth_config
+
+
+def test_client_secret_in_a_full_oauth2_config_is_still_narrowed():
+    config = {**_OAUTH2, "client_secret": "s3cret-value"}
+    spec = MCPServerConfigSpec.from_entity(
+        MCPServerConfig(url="https://mcp/x", auth_config=config),
+        assistant_name="a",
+        server_name="srv",
+    )
+    assert CredentialRef(spec.auth_config["client_secret"])
+    assert spec.auth_config["token_url"] == _OAUTH2["token_url"]
+    with pytest.raises(ValidationError):
+        MCPServerConfigSpec(auth_config=config)
+
+
+def test_assistant_flags_stay_unset_when_the_document_omits_them():
+    spec = AssistantSpec(
+        name="a",
+        description="d",
+        system_prompt="p",
+        project="proj",
+        llm_model_type="gpt",
+    )
+    assert spec.interactive_enabled is None and spec.enable_image_generation is None

@@ -502,23 +502,48 @@ def _sent_body(client, method):
     return call.args[-1].to_body()
 
 
-def test_provider_update_keeps_live_settings_the_document_omits():
-    # The backend resets every omitted schema parameter to its default.
-    live = _new_live(
+_CIPHERTEXT = "gAAAAAB-stored-ciphertext"
+
+
+def _provider_live_with_secret():
+    # A read returns a secret encrypted, not masked.
+    return _new_live(
         "provider",
         provider_fields={
             "toolkit_id": "tk",
-            "base_params": {"region": "us", "api_key": "**********"},
+            "base_params": {"region": "us", "api_key": _CIPHERTEXT},
             "create_params": {"mode": "fast"},
         },
     )
-    client = FakeClient(datasources=FakeDatasources(get=live))
+
+
+def test_provider_update_keeps_live_settings_but_not_stored_secrets():
+    # The backend resets omitted settings to their defaults but encrypts every
+    # secret it receives: a stored ciphertext sent back would be encrypted again.
+    client = FakeClient(datasources=FakeDatasources(get=_provider_live_with_secret()))
     doc = _new_doc("provider", settings={"mode": "slow"}, description="changed")
     _planner(client).apply(doc, "ds-7", TARGET)
     sent = _sent_body(client, "update_provider_datasource")
     assert (sent["name"], sent["project_name"]) == ("ds", TARGET)
-    assert sent["region"] == "us" and sent["api_key"] == "**********"
-    assert sent["mode"] == "slow"
+    assert sent["region"] == "us" and sent["mode"] == "slow"
+    assert "api_key" not in sent
+    assert _CIPHERTEXT not in str(sent)
+
+
+def test_provider_update_without_a_schema_refuses_to_guess_which_keys_are_secret(
+    no_lookup,
+):
+    client = FakeClient(datasources=FakeDatasources(get=_provider_live_with_secret()))
+    doc = _new_doc("provider", settings={"mode": "env:MODE"}, description="changed")
+    planner = SingleEntityPlanner(
+        client, credentials=EnvCredentialResolver({"MODE": "slow"})
+    )
+    with pytest.raises(ApplyError) as info:
+        planner.apply(doc, "ds-7", TARGET)
+    assert info.value.error_type == "provider_secrets_unknown"
+    assert "api_key" in info.value.reason and "region" in info.value.reason
+    assert _CIPHERTEXT not in info.value.reason
+    assert client.datasources.calls_to("update_provider_datasource") == []
 
 
 def test_xray_update_does_not_send_an_embedding_model():
@@ -637,4 +662,143 @@ def test_sharepoint_site_change_is_a_full_reindex():
 
 def test_forced_sharepoint_update_does_not_grow_a_reindex():
     request = _apply_update("knowledge_base_sharepoint", {}, force=True)
+    assert not request.full_reindex
+
+
+# --- request bodies are not logged by the SDK ---------------------------------
+
+
+def _real_datasource_client(monkeypatch):
+    from codemie_sdk.services.datasource import DatasourceService
+    from codemie_sdk.utils import http
+
+    def fake_send(**kwargs):
+        return SimpleNamespace(
+            status_code=200,
+            content=b'{"message": "ok"}',
+            text='{"message": "ok"}',
+            json=lambda: {"message": "ok"},
+            raise_for_status=lambda: None,
+        )
+
+    monkeypatch.setattr(http.requests, "post", fake_send)
+    monkeypatch.setattr(http.requests, "put", fake_send)
+    service = DatasourceService("https://codemie.example.com", "token")
+    return FakeClient(
+        datasources=_Delegating(service, get=_provider_live_with_secret())
+    )
+
+
+class _Delegating(FakeDatasources):
+    """Real SDK service for create/update/list, so its request logging runs."""
+
+    def __init__(self, service, **responses):
+        super().__init__(**responses)
+        self._service = service
+
+    def create_provider_datasource(self, *args, **kwargs):
+        return self._service.create_provider_datasource(*args, **kwargs)
+
+    def update_provider_datasource(self, *args, **kwargs):
+        return self._service.update_provider_datasource(*args, **kwargs)
+
+    def list(self, **kwargs):
+        return []
+
+
+def _provider_env_doc():
+    return _new_doc("provider", settings={"region": "eu", "api_key": "env:PROV_KEY"})
+
+
+def test_provider_create_does_not_log_the_resolved_secret(monkeypatch, caplog):
+    caplog.set_level("DEBUG", logger="codemie_sdk")
+    client = _real_datasource_client(monkeypatch)
+    planner = SingleEntityPlanner(
+        client, credentials=EnvCredentialResolver({"PROV_KEY": PROV_SECRET})
+    )
+    planner.apply(_provider_env_doc(), None, TARGET)
+    assert PROV_SECRET not in caplog.text
+
+
+def test_provider_update_does_not_log_the_resolved_secret(monkeypatch, caplog):
+    caplog.set_level("DEBUG", logger="codemie_sdk")
+    client = _real_datasource_client(monkeypatch)
+    planner = SingleEntityPlanner(
+        client, credentials=EnvCredentialResolver({"PROV_KEY": PROV_SECRET})
+    )
+    planner.apply(_provider_env_doc(), "ds-7", TARGET)
+    assert PROV_SECRET not in caplog.text
+
+
+# --- review round: omitted flags, branch, OAuth reindex ----------------------
+
+
+def test_omitted_assistant_flags_keep_the_live_values():
+    # The platform update is partial: flags the document leaves out must stay.
+    live = _live(interactive_enabled=True, enable_image_generation=True)
+    client = FakeClient(assistants=FakeAssistants(get=live))
+    result = _planner(client).apply(_assistant(), "asst-1", TARGET)
+    assert result == ApplyResult(id="asst-1", created=False)
+    assert client.assistants.calls_to("update") == []
+
+
+def test_omitted_assistant_flags_are_not_sent_on_another_change():
+    live = _live(
+        interactive_enabled=True, enable_image_generation=True, description="old"
+    )
+    client = FakeClient(assistants=FakeAssistants(get=live))
+    _planner(client).apply(_assistant(), "asst-1", TARGET)
+    (call,) = client.assistants.calls_to("update")
+    sent = call.args[1].model_dump(exclude_none=True)
+    assert "interactive_enabled" not in sent
+    assert "enable_image_generation" not in sent
+
+
+def test_an_explicit_false_flag_is_a_difference_and_is_sent():
+    live = _live(interactive_enabled=True)
+    client = FakeClient(assistants=FakeAssistants(get=live))
+    doc = _assistant()
+    doc.spec.interactive_enabled = False
+    plan = _planner(client).plan(doc, "asst-1", TARGET)
+    assert [d.field for d in plan.differences] == ["interactive_enabled"]
+    _planner(client).apply(doc, "asst-1", TARGET)
+    (call,) = client.assistants.calls_to("update")
+    assert call.args[1].interactive_enabled is False
+
+
+def test_svn_create_without_branch_sends_trunk():
+    client = FakeClient()
+    _planner(client).apply(_new_doc("svn"), None, TARGET)
+    (call,) = client.datasources.calls_to("create")
+    assert call.args[0].branch == "trunk"
+
+
+def _stored_oauth_live():
+    return _new_live(
+        "knowledge_base_sharepoint",
+        sharepoint={
+            "site_url": "https://sp/x",
+            "auth_type": "oauth_custom",
+            "oauth_client_id": "cid",
+        },
+    )
+
+
+def test_sharepoint_source_change_on_a_stored_oauth_datasource_needs_the_token():
+    # The document omits auth_type and the token: the live auth_type is used,
+    # so the SDK refuses the reindex before anything is written.
+    client = FakeClient(datasources=FakeDatasources(get=_stored_oauth_live()))
+    doc = _new_doc("knowledge_base_sharepoint", site_url="https://sp/other")
+    with pytest.raises(ApplyError) as info:
+        _planner(client).apply(doc, "ds-7", TARGET)
+    assert info.value.error_type == "invalid_body"
+    assert "access_token" in info.value.reason
+    assert client.datasources.calls_to("update") == []
+
+
+def test_sharepoint_metadata_change_on_a_stored_oauth_datasource_still_updates():
+    client = FakeClient(datasources=FakeDatasources(get=_stored_oauth_live()))
+    doc = _new_doc("knowledge_base_sharepoint", description="changed")
+    _planner(client).apply(doc, "ds-7", TARGET)
+    request = _update_request(client)
     assert not request.full_reindex

@@ -322,8 +322,13 @@ reports that `region` is not secret (see below); without a lookup it must be an
   (`settings.<key>`); changes to the other keys still show in the plan.
   `toolkit_id` cannot change: a different one is refused, recreate the
   datasource.
-  On update, settings the document leaves out keep their live values (the
-  platform would otherwise reset them to the schema default). A provider
+  On update, settings the document leaves out keep their stored values: the
+  non-secret ones are sent back (the platform would otherwise reset them to the
+  schema default), and the secret ones are left out, which keeps them (a read
+  returns a secret encrypted, and sending that back would encrypt it again).
+  Which ones are secret comes from `provider_secret_lookup`; without it, an
+  update that leaves out any stored setting is refused, naming the settings, so
+  list them in the document or pass a lookup. A provider
   document takes no `cron_expression` or `timezone`, and a setting value that
   starts with `env:` but is not a valid reference (`env:my-region`, `ENV:FOO`)
   is rejected.
@@ -347,9 +352,12 @@ reports that `region` is not secret (see below); without a lookup it must be an
   categories they are not Category documents and create no dependency.
 - **Fields of the export round trip.** Documents also carry toolkit and tool
   `auto_credentials_lookup`, an assistant's `hedging_config`,
-  `interactive_enabled`, `enable_image_generation` and `file_attachment_enabled`,
-  an inline MCP config's `audience` and `auth_config` (a secret-looking entry
-  must be an `env:` reference), a workflow's `start_hint` and its engine
+  `interactive_enabled`, `enable_image_generation` and `file_attachment_enabled`
+  (left out of a document, they keep the stored value),
+  an inline MCP config's `audience` and `auth_config` (an entry named
+  `client_secret`, `refresh_token`, `access_token`, `password`, `private_key`
+  and the like must be an `env:` reference; fields such as `token_url` or
+  `token_delivery` are plain values), a workflow's `start_hint` and its engine
   switches (compared through `yaml_config`).
 - A datasource create answers with a message only, so apply looks the new
   datasource up by project and name and returns its id. If the platform does
