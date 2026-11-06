@@ -45,4 +45,15 @@ def read_bundle(path: Path) -> Bundle:
         text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         raise InvalidDocumentError(f"cannot read document file {path}") from None
-    return serializer.from_yaml(text)
+    try:
+        return serializer.from_yaml(text)
+    except serializer.DocumentParseError as exc:
+        # The parser's own message quotes the source line, which may hold a secret.
+        raise InvalidDocumentError(f"{path}: {_location(exc)}") from None
+
+
+def _location(exc: serializer.DocumentParseError) -> str:
+    mark = getattr(exc.__cause__, "problem_mark", None)
+    if mark is None:
+        return str(exc)  # structural error (empty document): no source quoted
+    return f"invalid YAML at line {mark.line + 1}, column {mark.column + 1}"

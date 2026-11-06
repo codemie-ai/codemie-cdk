@@ -23,10 +23,16 @@ _KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _EXPORT = re.compile(r"^export\s+")
 
 
+_QUOTED = re.compile(r"""^(["'])(.*?)\1(?:\s+#.*)?$""")
+_INLINE_COMMENT = re.compile(r"\s+#.*$")
+
+
 def _unquote(value: str) -> str:
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-        return value[1:-1]
-    return value
+    """Strip matching quotes (a trailing ``# comment`` after them is dropped)."""
+    quoted = _QUOTED.match(value)
+    if quoted:
+        return quoted.group(2)
+    return _INLINE_COMMENT.sub("", value)
 
 
 def _parse_line(raw: str) -> Optional[tuple[str, str]]:

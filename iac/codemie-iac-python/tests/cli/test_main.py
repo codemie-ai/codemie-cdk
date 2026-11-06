@@ -77,7 +77,7 @@ def test_plan_dispatch(target, monkeypatch):
     assert calls["json_output"] is True
     assert calls["project"] == "demo"
     assert calls["client"] == "client"
-    assert "environ" not in calls
+    assert calls["environ"] == {"X": "1"}
 
 
 def test_apply_dispatch_without_id(target, monkeypatch):
@@ -95,8 +95,15 @@ def test_apply_dispatch_without_id(target, monkeypatch):
     assert calls["environ"] == {"X": "1"}
 
 
-def test_plan_without_id_is_accepted_by_parser(target, monkeypatch):
-    monkeypatch.setattr(
-        main_module, "plan_command", lambda f, i, **k: ExitStatus.SUCCESS
-    )
-    assert main(["plan", "f.yaml"]) == 0
+@pytest.mark.parametrize(
+    "argv",
+    [["plan", "f.yaml"], ["apply", "--id", "x", "."]],
+    ids=["plan-without-id", "directory-with-id"],
+)
+def test_usage_errors_exit_4_before_the_client_is_built(monkeypatch, argv, capsys):
+    def _resolve(*args, **kwargs):
+        raise AssertionError("usage checks must run before any target is resolved")
+
+    monkeypatch.setattr(main_module.TargetConfig, "resolve", _resolve)
+    assert main(argv) == ExitStatus.CONFIG_ERROR
+    assert "ConfigError" in capsys.readouterr().out

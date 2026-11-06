@@ -151,7 +151,7 @@ def test_runner_generic_failure_is_apply_failed(monkeypatch, capsys, as_json):
 
     monkeypatch.setattr(main_module.TargetConfig, "resolve", lambda *a, **k: _Target())
     monkeypatch.setattr(main_module, "plan_command", boom)
-    argv = ["plan", "f.yaml"] + (["--json"] if as_json else [])
+    argv = ["plan", "f.yaml", "--id", "x"] + (["--json"] if as_json else [])
     code = main(argv)
     _check(ExitStatus(code), capsys.readouterr().out, as_json, ExitStatus.APPLY_FAILED)
 

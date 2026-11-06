@@ -23,7 +23,7 @@ from .commands.apply import apply_command
 from .commands.plan import plan_command
 from .exit_status import ExitStatus
 from .render import render_error
-from .target_config import TargetConfig
+from .target_config import ConfigError, TargetConfig
 
 __all__ = ["main"]
 
@@ -39,7 +39,6 @@ def _add_apply(sub: argparse.ArgumentParser) -> None:
 
 
 def _run_plan(args: argparse.Namespace, **context: Any) -> ExitStatus:
-    context.pop("environ", None)  # plan never resolves credentials
     return plan_command(args.file, args.entity_id, **context)
 
 
@@ -81,8 +80,17 @@ def _fail(exc: Exception, args: argparse.Namespace, status: ExitStatus) -> ExitS
     return status
 
 
+def _check_usage(args: argparse.Namespace) -> None:
+    """Reject bad argument combinations before any network call is made."""
+    if args.command == "plan" and not args.entity_id:
+        raise ConfigError("plan requires --id of the entity to compare against")
+    if args.command == "apply" and args.entity_id and args.path.is_dir():
+        raise ConfigError("--id cannot be combined with a directory")
+
+
 def _dispatch(args: argparse.Namespace) -> ExitStatus:
     try:
+        _check_usage(args)
         target = TargetConfig.resolve(args.project, args.config, env_file=args.env_file)
         client = target.build_client()
     except Exception as exc:  # noqa: BLE001 - rendered by type name only

@@ -226,9 +226,9 @@ def test_cli_passes_env_file_to_resolve(monkeypatch):
         "plan",
         ("h", main_module._add_plan, lambda a, **k: ExitStatus.SUCCESS),
     )
-    main(["--env-file", "x.env", "plan", "f.yaml"])
+    main(["--env-file", "x.env", "plan", "f.yaml", "--id", "x"])
     assert seen["env_file"] == "x.env"
-    main(["plan", "f.yaml"])
+    main(["plan", "f.yaml", "--id", "x"])
     assert seen["env_file"] is None
 
 
@@ -256,3 +256,19 @@ def test_real_env_beats_dotenv_for_credentials(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     target = TargetConfig.resolve("p", None, {**BASE, "CRED_VAR": "from-shell"})
     assert target.environment["CRED_VAR"] == "from-shell"
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("CODEMIE_PASSWORD=abc # prod", "abc"),
+        ('K="v" # c', "v"),
+        ("K='v w' # c", "v w"),
+        ('K="a # b"', "a # b"),
+        ("K=a#b", "a#b"),
+    ],
+)
+def test_inline_comments_and_quotes_are_stripped(line, expected):
+    from codemie_iac.cli.env_file import parse_env_text
+
+    assert parse_env_text(line) == {line.split("=")[0]: expected}

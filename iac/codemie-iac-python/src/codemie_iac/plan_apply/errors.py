@@ -19,7 +19,7 @@ import json
 import re
 from collections.abc import Iterable
 from typing import Any
-from urllib.parse import quote, quote_plus
+from urllib.parse import quote, quote_plus, urlsplit
 
 import requests
 from codemie_sdk.exceptions import ApiError, CodeMieError
@@ -194,8 +194,17 @@ class PlatformRejectionError(ApplyError):
 _DETAIL_LIMIT = 500
 
 
+def _request_path(exc: BaseException) -> str:
+    response = getattr(exc, "response", None)
+    url = getattr(response, "url", None)
+    return urlsplit(url).path if isinstance(url, str) else ""
+
+
 def platform_detail(exc: BaseException) -> str | None:
     """``"<status>: <message>"`` of a platform HTTP error, else ``None``.
+
+    Without a parsable message the status (and the request path, when known)
+    is still returned, so an expired token and a wrong id stay distinguishable.
 
     For errors that do not pass through ``PlatformRejectionError`` (a failing
     read while planning): ``requests.HTTPError`` keeps the platform's
@@ -205,8 +214,10 @@ def platform_detail(exc: BaseException) -> str | None:
     if not isinstance(exc, PLATFORM_ERRORS):
         return None
     status, body = _status_and_body(exc)
-    errors = _parse_field_errors(body)
-    if status is None or not errors:
+    if status is None:
         return None
+    errors = _parse_field_errors(body)
+    if not errors:
+        return f"{status} {_request_path(exc)}".strip()
     message = "; ".join(e.message for e in errors)
     return f"{status}: {message[:_DETAIL_LIMIT]}"

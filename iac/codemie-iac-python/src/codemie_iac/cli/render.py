@@ -62,11 +62,13 @@ def _emit_json(payload: dict, status: ExitStatus, secrets: Iterable[str]) -> str
         "status": ExitStatus(status).name.lower(),
         "exit_code": int(status),
     }
-    return json.dumps(_scrub_value(payload, tuple(secrets)), indent=2, default=str)
+    return (
+        json.dumps(_scrub_value(payload, tuple(secrets)), indent=2, default=str) + "\n"
+    )
 
 
 def _emit_text(lines: list[str], secrets: Iterable[str]) -> str:
-    return scrub("\n".join(lines), tuple(secrets))
+    return scrub("\n".join(lines), tuple(secrets)) + "\n"
 
 
 def _val(value: Any) -> str:

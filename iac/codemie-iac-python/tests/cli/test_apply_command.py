@@ -15,6 +15,7 @@
 import io
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from codemie_sdk.exceptions import ApiError
@@ -257,3 +258,34 @@ def test_credentials_come_from_given_environ_not_process_env(tmp_path, monkeypat
     assert status == ExitStatus.SUCCESS
     assert client.integrations.calls_to("create")
     assert SECRET not in out.getvalue()
+
+
+class _CountingAssistants(FakeAssistants):
+    def create(self, request):
+        self._call("create", request)
+        n = len(self.calls_to("create"))
+        return SimpleNamespace(message="ok", assistant_id=f"asst-{n}")
+
+
+def test_same_file_applied_twice_without_id_creates_two_entities(tmp_path):
+    path = _write(tmp_path / "a.yaml", _assistant())
+    client = FakeClient(assistants=_CountingAssistants())
+    _, first = _run(path, client=client)
+    _, second = _run(path, client=client)
+    assert len(client.assistants.calls_to("create")) == 2
+    assert "asst-1" in first and "asst-2" in second
+
+
+def test_broken_yaml_names_the_file_and_line_without_its_content(tmp_path):
+    broken = tmp_path / "broken.yaml"
+    broken.write_text("name: ok\npassword: s3cr3t: [\n")
+    status, text = _run(tmp_path)
+    assert status == ExitStatus.INVALID_DOCUMENT == 5
+    assert "broken.yaml" in text and "line 2" in text
+    assert "s3cr3t" not in text
+
+
+def test_text_and_json_output_end_with_a_newline(tmp_path):
+    path = _write(tmp_path / "a.yaml", _assistant())
+    assert _run(path)[1].endswith("\n")
+    assert _run(path, json_output=True)[1].endswith("\n")

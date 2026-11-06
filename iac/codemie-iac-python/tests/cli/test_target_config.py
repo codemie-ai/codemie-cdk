@@ -148,11 +148,19 @@ def test_expansion_default_and_env(tmp_path):
     assert kwargs["auth_server_url"] == "https://kc/auth"
 
 
-def test_expansion_unset_and_empty_mean_not_set(tmp_path):
-    text = "environment:\n  codemie_api_url: ${NOPE}\n  auth_server_url: ${EMPTY:-}\n"
+def test_expansion_with_empty_default_means_not_set(tmp_path):
+    text = "environment:\n  codemie_api_url: ${NOPE:-}\n  auth_server_url: ${EMPTY:-}\n"
     cfg = _write(tmp_path, f"project:\n  name: p\n{text}")
     with pytest.raises(ConfigError, match="CODEMIE_API_URL"):
         TargetConfig.resolve(None, cfg, {"EMPTY": ""})
+
+
+@pytest.mark.parametrize("environ", [{}, {"CODEMIE_PASSWORD": ""}])
+def test_unset_or_empty_variable_without_default_is_a_config_error(tmp_path, environ):
+    text = "environment:\n  username: u\n  password: ${CODEMIE_PASSWORD}\n"
+    cfg = _write(tmp_path, f"project:\n  name: p\n{text}")
+    with pytest.raises(ConfigError, match=r"\$\{CODEMIE_PASSWORD\}.*not set"):
+        TargetConfig.resolve(None, cfg, environ)
 
 
 def test_expansion_empty_var_uses_default(tmp_path):

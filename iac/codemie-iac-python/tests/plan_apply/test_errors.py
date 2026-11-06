@@ -148,8 +148,14 @@ def test_platform_detail_reads_top_level_detail():
 
 def test_platform_detail_is_none_without_a_readable_message():
     assert platform_detail(ValueError("x")) is None
-    assert platform_detail(_http_error(500, {})) is None
     assert platform_detail(ApiError("bad")) is None
+
+
+def test_platform_detail_falls_back_to_status_and_request_path():
+    error = _http_error(401, {})
+    error.response.url = "https://codemie.example.com/v1/assistants/abc?x=1"
+    assert platform_detail(error) == "401 /v1/assistants/abc"
+    assert platform_detail(_http_error(500, {})) == "500"
 
 
 def test_platform_detail_is_capped():

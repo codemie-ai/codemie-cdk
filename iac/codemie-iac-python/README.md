@@ -644,11 +644,12 @@ refused with `project_mismatch`.
 ignored); `--env-file PATH` reads that file instead (missing or unreadable is a
 config error, exit 4). Lines are `KEY=VALUE`; blank lines, `#` comments and an
 optional `export ` prefix are handled, matching single/double quotes around the
-value are stripped, `${}` is not expanded, and lines with an invalid key are
+value are stripped, an inline ` # comment` after a value is dropped, `${}` is not expanded, and lines with an invalid key are
 skipped. Variables already set in the real environment always win; `.env` only
 fills in unset ones (nothing is written to `os.environ`). `${NAME}` references
 in `codemie.yaml` see the merged values, and so do `env:NAME` credential references
-in `apply` (so a secret like `JIRA_PROD_API_TOKEN` can live in `.env`).
+in `plan` and `apply` (so a secret like `JIRA_PROD_API_TOKEN` can live in `.env`;
+`plan` only checks that the name is set, it never reads the value).
 
 Exit codes: 0 success / nothing to do, 1 changes pending, 2 apply failed,
 3 unresolved input, 4 config error, 5 invalid document.
@@ -665,8 +666,9 @@ mapping (`url`, `auth_url`, `realm`) as a fallback. Precedence per key: flag >
 environment variable (real environment, then `.env`) > `environment:` > `api:`.
 
 String values may reference environment variables: `${NAME}` or
-`${NAME:-default}`. An unset or empty variable without a default gives an empty
-string, which counts as "not set". A `$` not followed by `{` is left as is.
+`${NAME:-default}`. An unset or empty `${NAME}` without a default is a config
+error (exit 4) naming the variable; write `${NAME:-}` where an empty value is
+fine. A `$` not followed by `{` is left as is.
 
 ```yaml
 environment:

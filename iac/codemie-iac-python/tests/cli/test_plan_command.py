@@ -24,6 +24,7 @@ from codemie_iac.cli.commands import plan as plan_module
 from codemie_iac.cli.commands.plan import plan_command
 from codemie_iac.cli.exit_status import ExitStatus
 from codemie_iac.envelope import Bundle
+from codemie_iac.credentials import CredentialRef
 from tests.plan_apply.fakes import FakeAssistants, FakeClient
 from tests.plan_apply.test_single_entity_plan import (
     _assistant,
@@ -43,7 +44,7 @@ def _client(**live):
     )
 
 
-def _run(file, entity_id="asst-1", client=None, json_output=False):
+def _run(file, entity_id="asst-1", client=None, json_output=False, environ=None):
     out = io.StringIO()
     status = plan_command(
         file,
@@ -52,6 +53,7 @@ def _run(file, entity_id="asst-1", client=None, json_output=False):
         project="proj",
         client=client or _client(),
         out=out,
+        environ=environ,
     )
     return status, out.getvalue()
 
@@ -84,7 +86,7 @@ def test_only_cannot_compare_gives_zero_with_warnings(tmp_path, monkeypatch):
     from codemie_iac.plan_apply import CannotCompare, Plan
 
     class _Planner:
-        def __init__(self, client):
+        def __init__(self, client, credentials=None):
             pass
 
         def plan(self, document, entity_id, project):
@@ -115,22 +117,17 @@ def test_wrong_document_count_is_invalid_document(tmp_path, count):
     assert text
 
 
-def test_no_credential_resolver_is_constructed(tmp_path, monkeypatch):
-    built = []
-
-    class _Spy:
-        def __init__(self, *a, **k):
-            built.append(1)
-
-    monkeypatch.setattr(plan_module, "EnvCredentialResolver", _Spy, raising=False)
+def test_references_are_checked_against_the_given_environ(tmp_path, monkeypatch):
     seen = {}
     real = plan_module.SingleEntityPlanner
 
-    def _planner(*args, **kwargs):
-        seen["args"], seen["kwargs"] = args, kwargs
-        return real(*args, **kwargs)
+    def _planner(client, **kwargs):
+        seen.update(kwargs)
+        return real(client, **kwargs)
 
     monkeypatch.setattr(plan_module, "SingleEntityPlanner", _planner)
-    _run(_write(tmp_path, _assistant()))
-    assert built == []
-    assert len(seen["args"]) == 1 and seen["kwargs"] == {}
+    status, _ = _run(_write(tmp_path, _assistant()), environ={"ONLY_IN_ENV_FILE": "x"})
+    assert status == ExitStatus.NOTHING_TO_DO
+    resolver = seen["credentials"]
+    assert resolver.is_resolvable(CredentialRef("env:ONLY_IN_ENV_FILE"))
+    assert not resolver.is_resolvable(CredentialRef("env:ELSEWHERE"))

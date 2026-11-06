@@ -155,10 +155,27 @@ def _file_project(document: Mapping[str, Any]) -> Optional[str]:
     return str(name) if name else None
 
 
+def _substitute(match: "re.Match[str]", env: Mapping[str, str]) -> str:
+    name, default = match.group(1), match.group(2)
+    found = env.get(name)
+    if found:
+        return found
+    if default is None:
+        raise ConfigError(
+            f"codemie.yaml references ${{{name}}}, which is not set "
+            f"(use ${{{name}:-}} to allow an empty value)"
+        )
+    return default
+
+
 def _expand(value: Any, env: Mapping[str, str]) -> Any:
-    """Expand ``${NAME}`` / ``${NAME:-default}`` in every string, recursively."""
+    """Expand ``${NAME}`` / ``${NAME:-default}`` in every string, recursively.
+
+    A ``${NAME}`` that is unset or empty is a config error; ``${NAME:-}`` is how
+    a value is allowed to be empty.
+    """
     if isinstance(value, str):
-        return _VAR.sub(lambda m: env.get(m.group(1)) or m.group(2) or "", value)
+        return _VAR.sub(lambda m: _substitute(m, env), value)
     if isinstance(value, dict):
         return {key: _expand(item, env) for key, item in value.items()}
     if isinstance(value, list):
