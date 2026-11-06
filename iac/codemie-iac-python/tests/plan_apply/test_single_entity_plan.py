@@ -105,6 +105,22 @@ def test_live_equal_to_document_gives_empty_plan():
     assert plan.differences == [] and plan.cannot_compare == []
 
 
+def test_omitted_icon_url_against_a_live_icon_is_a_difference():
+    live = _live_assistant(icon_url="https://example.com/i.png")
+    result = _run(_assistant(), live)
+    assert result == [
+        Difference(
+            field="icon_url",
+            document_value=None,
+            live_value="https://example.com/i.png",
+        )
+    ]
+
+
+def test_omitted_icon_url_against_no_live_icon_gives_empty_plan():
+    assert _plan(_assistant(), _live_assistant(icon_url=None)).is_empty
+
+
 def test_externally_changed_field_is_reported():
     result = _run(_assistant(), _live_assistant(system_prompt="edited"))
     assert result == [

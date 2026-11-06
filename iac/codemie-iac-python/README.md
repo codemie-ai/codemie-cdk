@@ -478,7 +478,9 @@ client); the rest of the library stays offline. Ground rules:
   anyway, e.g. to rotate a secret.
 - **A field the document leaves unset is not compared.** The platform may fill
   it (an assistant's slug, a datasource's default timezone) and a write never
-  sends it. To clear a value, author it empty (`""`, `[]`).
+  sends it. To clear a value, author it empty (`""`, `[]`). The one exception is
+  `icon_url` on an assistant or workflow: omitting it clears an icon set on the
+  platform, and `plan` reports the difference first.
 - **A document's `meta.name` must equal the entity's own name** (the spec
   `name`, the workflow's `name`, or the integration's `alias`). References and
   the live lookup go by `meta.name`, while the platform uses the spec name, so
@@ -598,11 +600,18 @@ whose own project is not the target, in single apply and in bulk preflight.
 
 **The project of a document is optional.** `AssistantSpec.project`,
 `SkillSpec.project`, `IntegrationSpec.project_name` and every datasource's
-`project_name` default to `None`. The CLI fills an omitted one with the target
-project before planning or applying (single file and every document of a
-directory); the engine itself (`BulkCreator`, `SingleEntityPlanner`) does not,
-so library callers must set it. A project that is named and differs from the
-target is refused (`project_mismatch`).
+`project_name` default to `None`. The engine (`BulkCreator`,
+`SingleEntityPlanner`) fills an omitted one with the target project before
+planning or applying, for the CLI and library callers alike. A project that is
+named and differs from the target is refused (`project_mismatch`).
+
+**Required fields mirror the platform.** A code datasource document needs
+`link`, `branch` and `index_type` (the platform's create request requires all
+three), on update as well as create, because the document is the full desired
+state. A skill's `name` must be kebab-case (`^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$`),
+its `description` 10 to 1000 characters, its `content` at least 100 characters,
+and it takes at most 3 `categories`. A document that breaks these is rejected
+before anything is sent.
 
 ## Where things live
 

@@ -27,6 +27,7 @@ from .errors import ApplyError
 
 __all__ = [
     "SPEC_PROJECT_FIELDS",
+    "with_default_project",
     "guard_datasource_identity",
     "guard_name",
     "guard_project",
@@ -141,6 +142,19 @@ def _guard_google_document(document: Document, live: Any) -> None:
             "changing the document of a Google datasource is not supported: "
             "create a new datasource for the new document",
         )
+
+
+def with_default_project(document: Document, target: str) -> Document:
+    """Return ``document`` with an omitted project set to ``target``.
+
+    A document that names a project is returned as is, so ``guard_project``
+    still refuses one that differs from the target.
+    """
+    field = SPEC_PROJECT_FIELDS.get(document.meta.kind)
+    if field is None or getattr(document.spec, field, None) is not None:
+        return document
+    spec = document.spec.model_copy(update={field: target})
+    return document.model_copy(update={"spec": spec})
 
 
 def guard_project(document: Document, target: str) -> None:

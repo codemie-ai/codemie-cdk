@@ -14,16 +14,13 @@
 
 """Selecting the single document of a file for the single-entity commands."""
 
-from collections.abc import Iterable
 from pathlib import Path
 
 from .. import serializer
 from ..envelope import Bundle, Document
-from ..plan_apply.guards import SPEC_PROJECT_FIELDS
 
 __all__ = [
     "InvalidDocumentError",
-    "apply_default_project",
     "read_bundle",
     "single_document",
 ]
@@ -49,20 +46,3 @@ def read_bundle(path: Path) -> Bundle:
     except (OSError, UnicodeDecodeError):
         raise InvalidDocumentError(f"cannot read document file {path}") from None
     return serializer.from_yaml(text)
-
-
-def _with_project(document: Document, target: str) -> Document:
-    field = SPEC_PROJECT_FIELDS.get(document.meta.kind)
-    if field is None or getattr(document.spec, field, None) is not None:
-        return document
-    spec = document.spec.model_copy(update={field: target})
-    return document.model_copy(update={"spec": spec})
-
-
-def apply_default_project(documents: Iterable[Document], target: str) -> list[Document]:
-    """Return ``documents`` with every omitted project set to ``target``.
-
-    A document that names a project is returned as is, so the engine's
-    project guard still refuses one that differs from the target.
-    """
-    return [_with_project(document, target) for document in documents]

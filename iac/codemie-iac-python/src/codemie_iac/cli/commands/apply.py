@@ -21,7 +21,6 @@ from typing import Any, TextIO
 from ...plan_apply import BulkCreator, EnvCredentialResolver, SingleEntityPlanner
 from ..documents import (
     InvalidDocumentError,
-    apply_default_project,
     read_bundle,
     single_document,
 )
@@ -51,9 +50,7 @@ def _apply_directory(
     )
     if not files:
         raise InvalidDocumentError(f"no .yaml/.yml documents found in {path}")
-    documents = apply_default_project(
-        (document for file in files for document in read_bundle(file)), project
-    )
+    documents = [document for file in files for document in read_bundle(file)]
     report = BulkCreator(client, credentials=credentials).create_all(documents, project)
     status = ExitStatus.APPLY_FAILED if report.failed else ExitStatus.SUCCESS
     out.write(
@@ -76,7 +73,7 @@ def _apply_file(
     out: TextIO,
     credentials: EnvCredentialResolver,
 ) -> ExitStatus:
-    (document,) = apply_default_project([single_document(read_bundle(path))], project)
+    document = single_document(read_bundle(path))
     result = SingleEntityPlanner(client, credentials=credentials).apply(
         document, entity_id, project
     )

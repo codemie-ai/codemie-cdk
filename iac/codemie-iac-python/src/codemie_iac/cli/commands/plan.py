@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from ...plan_apply import Plan, SingleEntityPlanner
-from ..documents import apply_default_project, read_bundle, single_document
+from ..documents import read_bundle, single_document
 from ..exit_status import ExitStatus, exit_status_for
 from ..render import render_error, render_plan
 from ..target_config import ConfigError
@@ -33,7 +33,7 @@ def _plan_status(plan: Plan) -> ExitStatus:
 def _compute_plan(file: Path, entity_id: str, project: str, client: Any) -> Plan:
     if not entity_id:
         raise ConfigError("plan requires --id of the entity to compare against")
-    (document,) = apply_default_project([single_document(read_bundle(file))], project)
+    document = single_document(read_bundle(file))
     return SingleEntityPlanner(client).plan(document, entity_id, project)
 
 

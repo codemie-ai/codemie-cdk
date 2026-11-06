@@ -21,10 +21,9 @@ import pytest
 from codemie_iac import serializer
 from codemie_iac.cli.commands.apply import apply_command
 from codemie_iac.cli.commands.plan import plan_command
-from codemie_iac.cli.documents import apply_default_project
 from codemie_iac.cli.exit_status import ExitStatus
 from codemie_iac.envelope import Bundle, Document, DocumentKind
-from codemie_iac.plan_apply.guards import SPEC_PROJECT_FIELDS
+from codemie_iac.plan_apply.guards import SPEC_PROJECT_FIELDS, with_default_project
 from codemie_iac.schema import DocumentValidationError, validate_document
 from tests.plan_apply.fakes import FakeAssistants, FakeClient
 from tests.plan_apply.test_single_entity_apply import _live
@@ -130,7 +129,7 @@ def test_project_not_required_in_json_schema(label):
 def test_helper_fills_missing_project_without_mutating(label):
     original = _doc(label)
     field = _SPECS[label][1]
-    (filled,) = apply_default_project([original], TARGET)
+    filled = with_default_project(original, TARGET)
     assert getattr(filled.spec, field) == TARGET
     assert getattr(original.spec, field) is None
     assert field == SPEC_PROJECT_FIELDS[original.meta.kind]
@@ -141,7 +140,7 @@ def test_helper_leaves_explicit_project_untouched(label):
     field = _SPECS[label][1]
     same = _doc(label, **{field: TARGET})
     other = _doc(label, **{field: "elsewhere"})
-    assert apply_default_project([same, other], TARGET) == [same, other]
+    assert [with_default_project(d, TARGET) for d in (same, other)] == [same, other]
 
 
 def test_helper_ignores_kinds_without_project():
@@ -153,7 +152,7 @@ def test_helper_ignores_kinds_without_project():
         }
     )
     assert category.meta.kind is DocumentKind.CATEGORY
-    assert apply_default_project([category], TARGET) == [category]
+    assert with_default_project(category, TARGET) == category
 
 
 def _file(tmp_path, *docs, name="a.yaml"):
@@ -234,3 +233,42 @@ def test_roundtrip_with_and_without_project(label):
     for document in (_doc(label), _doc(label, **{field: TARGET})):
         bundle = Bundle([document])
         assert serializer.from_yaml(serializer.to_yaml(bundle)) == bundle
+
+
+# --- The engine itself fills an omitted project, for library callers ---
+
+
+def test_engine_bulk_create_fills_an_omitted_project():
+    from codemie_iac.plan_apply import BulkCreator
+
+    client = FakeClient()
+    BulkCreator(client).create_all([_doc("assistant"), _doc("skill")], TARGET)
+    assert client.assistants.calls_to("create")[0].args[0].project == TARGET
+    assert client.skills.calls_to("create")[0].args[0].project == TARGET
+
+
+def test_engine_single_apply_fills_an_omitted_project():
+    from codemie_iac.plan_apply import SingleEntityPlanner
+
+    client = FakeClient()
+    SingleEntityPlanner(client).apply(_doc("assistant"), None, TARGET)
+    assert client.assistants.calls_to("create")[0].args[0].project == TARGET
+
+
+def test_engine_plan_fills_an_omitted_project():
+    from codemie_iac.plan_apply import SingleEntityPlanner
+
+    client = FakeClient(assistants=FakeAssistants(get=_live()))
+    plan = SingleEntityPlanner(client).plan(_doc("assistant"), "asst-1", TARGET)
+    assert plan is not None  # no project_mismatch raised
+
+
+def test_engine_still_refuses_a_different_project():
+    from codemie_iac.plan_apply import SingleEntityPlanner
+    from codemie_iac.plan_apply.errors import ApplyError
+
+    with pytest.raises(ApplyError) as info:
+        SingleEntityPlanner(FakeClient()).apply(
+            _doc("assistant", project="elsewhere"), None, TARGET
+        )
+    assert info.value.error_type == "project_mismatch"

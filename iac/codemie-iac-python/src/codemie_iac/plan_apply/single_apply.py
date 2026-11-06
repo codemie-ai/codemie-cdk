@@ -80,6 +80,7 @@ from .guards import (
     guard_datasource_identity,
     guard_name,
     guard_project,
+    with_default_project,
     guard_supported,
 )
 from .kinds import adapter_for, created_id
@@ -653,6 +654,7 @@ class SingleEntityPlanner:
 
     def plan(self, document: Document, entity_id: str, target: str) -> Plan:
         """Diff ``document`` against the entity ``entity_id`` (one read, no writes)."""
+        document = with_default_project(document, target)
         guard_name(document)
         guard_project(document, target)
         ctx = self._context(target, self._plan_credentials())
@@ -692,6 +694,7 @@ class SingleEntityPlanner:
         value) are then not known to be unchanged, so they are listed in
         ``ApplyResult.uncomparable``. ``force`` writes the full document.
         """
+        document = with_default_project(document, target)
         guard_supported(document)
         guard_name(document)
         guard_project(document, target)
