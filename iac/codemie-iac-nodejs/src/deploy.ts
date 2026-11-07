@@ -14,7 +14,11 @@ import * as yaml from 'yaml';
 
 import type { AppConfig } from './appConfig';
 import { logApiErrorDetails } from './lib/apiErrorLogger';
-import { createAssistantAndGetId } from './lib/assistantHelpers';
+import {
+  createAssistantAndGetId,
+  assertAssistantValidationSucceeded,
+  shouldRecoverAssistantCreateError,
+} from './lib/assistantHelpers';
 import { calculateChecksum, calculateAssistantConfigChecksum } from './lib/checksumUtils';
 import { CleanupManager } from './lib/cleanupManager';
 import { createClient } from './lib/clientFactory';
@@ -290,7 +294,8 @@ export async function deployAssistants(
               logger.debug('================================\n');
             }
 
-            await client.assistants.update(existingState.id, apiParams);
+            const updateResponse = await client.assistants.update(existingState.id, apiParams);
+            assertAssistantValidationSucceeded(updateResponse, 'update', assistant.name);
             logger.info(`✓ Updated assistant: ${assistant.name} (${existingState.id})`);
 
             stateManager.updateAssistantState(assistant.name, existingState.id, promptContent, assistant, buildConfig);
@@ -318,6 +323,9 @@ export async function deployAssistants(
             logger.info(`✓ Created assistant: ${assistant.name} (${assistantId})`);
             stats.created++;
           } catch (createError) {
+            if (!shouldRecoverAssistantCreateError(createError)) {
+              throw createError;
+            }
             logger.warn(`  ⚠️  Assistant create failed. Checking if it already exists on platform...`);
 
             let existingId: string | null = null;
@@ -342,7 +350,8 @@ export async function deployAssistants(
             }
 
             logger.info(`  Found existing assistant ID: ${existingId}. Updating...`);
-            await client.assistants.update(existingId, apiParams);
+            const updateResponse = await client.assistants.update(existingId, apiParams);
+            assertAssistantValidationSucceeded(updateResponse, 'update', assistant.name);
             assistantId = existingId;
             logger.info(`✓ Recovered and updated assistant: ${assistant.name} (${assistantId})`);
             stats.updated++;
@@ -366,6 +375,9 @@ export async function deployAssistants(
           logger.info(`✓ Created assistant: ${assistant.name} (${assistantId})`);
           stats.created++;
         } catch (createError) {
+          if (!shouldRecoverAssistantCreateError(createError)) {
+            throw createError;
+          }
           logger.warn(`  ⚠️  Assistant create failed. Checking if it already exists on platform...`);
 
           let existingId: string | null = null;
@@ -390,7 +402,8 @@ export async function deployAssistants(
           }
 
           logger.info(`  Found existing assistant ID: ${existingId}. Updating...`);
-          await client.assistants.update(existingId, apiParams);
+          const updateResponse = await client.assistants.update(existingId, apiParams);
+          assertAssistantValidationSucceeded(updateResponse, 'update', assistant.name);
           assistantId = existingId;
           logger.info(`✓ Recovered and updated assistant: ${assistant.name} (${assistantId})`);
           stats.updated++;
