@@ -469,6 +469,7 @@ export class CodemieConfigLoader {
   /**
    * Substitute environment variables in configuration
    * Supports syntax:
+   * - $${VAR_NAME} - literal placeholder (not read from the environment)
    * - ${VAR_NAME} - required variable (throws if not set)
    * - ${VAR_NAME:-default} - optional with default value (shell-style)
    * - ${VAR_NAME:default} - optional with default value (simplified)
@@ -483,10 +484,13 @@ export class CodemieConfigLoader {
       const childPath = isArray ? `${configPath}[${key}]` : configPath ? `${configPath}.${key}` : key;
 
       if (typeof obj[key] === 'string') {
-        // Match ${VAR_NAME} or ${VAR_NAME:-default} or ${VAR_NAME:default} or ${VAR_NAME:-}
+        // Match escaped placeholders before ordinary substitutions in a single pass.
         obj[key] = obj[key].replaceAll(
-          /\$\{([^:}]+)(?::-?([^}]*))?\}/g,
-          (match: string, varName: string, defaultValue: string) => {
+          /\$(\$)?\{([^:}]+)(?::-?([^}]*))?\}/g,
+          (match: string, escaped: string | undefined, varName: string, defaultValue: string) => {
+            if (escaped) {
+              return match.slice(1);
+            }
             const value = process.env[varName];
             if (value === undefined) {
               if (defaultValue !== undefined) {

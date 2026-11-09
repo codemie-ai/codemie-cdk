@@ -240,6 +240,74 @@ resources:
       delete process.env.SET_VAR;
     });
 
+    test.each([
+      [`$\${CODEMIE_ESCAPE_TEST}`, `\${CODEMIE_ESCAPE_TEST}`],
+      [`$\${CODEMIE_ESCAPE_MISSING}`, `\${CODEMIE_ESCAPE_MISSING}`],
+      [`$\${CODEMIE_ESCAPE_MISSING:-fallback}`, `\${CODEMIE_ESCAPE_MISSING:-fallback}`],
+      [`$\${CODEMIE_ESCAPE_MISSING:fallback}`, `\${CODEMIE_ESCAPE_MISSING:fallback}`],
+      [`$\${CODEMIE_ESCAPE_MISSING:-}`, `\${CODEMIE_ESCAPE_MISSING:-}`],
+      [`$\${CODEMIE_ESCAPE_MISSING:}`, `\${CODEMIE_ESCAPE_MISSING:}`],
+      [`$\${CODEMIE_ESCAPE_TEST} / \${CODEMIE_ESCAPE_TEST}`, `\${CODEMIE_ESCAPE_TEST} / local-value`],
+      [`$\${CODEMIE_ESCAPE_TEST}$\${CODEMIE_ESCAPE_MISSING}`, `\${CODEMIE_ESCAPE_TEST}\${CODEMIE_ESCAPE_MISSING}`],
+      [`prefix-$\${CODEMIE_ESCAPE_TEST}-suffix`, `prefix-\${CODEMIE_ESCAPE_TEST}-suffix`],
+      [`$$\${CODEMIE_ESCAPE_TEST}`, `$\${CODEMIE_ESCAPE_TEST}`],
+      ['plain $ and $$ and $NAME', 'plain $ and $$ and $NAME'],
+    ])('should load literal placeholders in %s without expanding them again', (input, expected) => {
+      const env: NodeJS.ProcessEnv = { ...process.env, CODEMIE_ESCAPE_TEST: 'local-value' };
+      delete env.CODEMIE_ESCAPE_MISSING;
+      jest.replaceProperty(process, 'env', env);
+      fs.writeFileSync(
+        path.join(tempDir, 'codemie.yaml'),
+        JSON.stringify({ version: '1', project: { name: input }, resources: {} })
+      );
+
+      expect(configLoader.loadConfig().project.name).toBe(expected);
+    });
+
+    test('should preserve escaped MCP placeholders in imported arrays alongside normal substitutions', () => {
+      const env: NodeJS.ProcessEnv = { ...process.env, CODEMIE_ESCAPE_TEST: 'local-value' };
+      delete env.CODEMIE_ESCAPE_MISSING;
+      jest.replaceProperty(process, 'env', env);
+      fs.writeFileSync(
+        path.join(tempDir, 'codemie.yaml'),
+        JSON.stringify({
+          version: '1',
+          project: { name: 'test-project' },
+          resources: { assistants: [{ $import: 'assistant.yaml' }] },
+        })
+      );
+      fs.writeFileSync(
+        path.join(tempDir, 'assistant.yaml'),
+        JSON.stringify({
+          name: 'example-assistant',
+          mcp_servers: [
+            {
+              name: 'example-mcp',
+              enabled: true,
+              config: {
+                env: { TOKEN: `$\${CODEMIE_ESCAPE_MISSING}`, LOCAL: `\${CODEMIE_ESCAPE_TEST}` },
+                args: [`$\${CODEMIE_ESCAPE_TEST}`, `\${CODEMIE_ESCAPE_TEST}`],
+              },
+            },
+          ],
+        })
+      );
+
+      const mcp = configLoader.loadConfig().resources.assistants?.[0].mcp_servers?.[0];
+      expect(mcp?.config?.env).toEqual({ TOKEN: `\${CODEMIE_ESCAPE_MISSING}`, LOCAL: 'local-value' });
+      expect(mcp?.config?.args).toEqual([`\${CODEMIE_ESCAPE_TEST}`, 'local-value']);
+    });
+
+    test('should not expand placeholders introduced by environment values', () => {
+      jest.replaceProperty(process, 'env', { ...process.env, CODEMIE_ESCAPE_TEST: `\${CODEMIE_ESCAPE_MISSING}` });
+      fs.writeFileSync(
+        path.join(tempDir, 'codemie.yaml'),
+        JSON.stringify({ version: '1', project: { name: `\${CODEMIE_ESCAPE_TEST}` }, resources: {} })
+      );
+
+      expect(configLoader.loadConfig().project.name).toBe(`\${CODEMIE_ESCAPE_MISSING}`);
+    });
+
     test('should apply datasource defaults by type', () => {
       fs.writeFileSync(
         path.join(tempDir, 'codemie.yaml'),
