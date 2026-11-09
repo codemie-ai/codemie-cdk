@@ -2,6 +2,8 @@
 
 This repository is a public client tool. It has no server, routes, database or session layer. The risks are secret leaks, destructive platform operations and the supply chain.
 
+The list of files, commands and actions an agent must refuse is in `.ai-run/guides/safety-no-go.md`. `.claude/settings.json` enforces it for Claude Code.
+
 ## Authentication
 
 The Node.js package authenticates through `codemie-sdk`, with client credentials or username and password (`iac/codemie-iac-nodejs/.env.template`). TLS verification is on (`createClient` in `lib/clientFactory.ts`). Do not add an option that turns it off (`SECURITY.md`).
