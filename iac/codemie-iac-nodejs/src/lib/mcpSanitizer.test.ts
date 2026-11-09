@@ -64,7 +64,7 @@ describe('sanitizeMcpServer', () => {
 
     expect(out.arguments).toBe(args);
     expect(out.tools).toBe(tools);
-    expect((out.tools as Array<Record<string, unknown>>)[0]).toHaveProperty('settings', null);
+    expect((out.tools as Record<string, unknown>[])[0]).toHaveProperty('settings', null);
   });
 
   it('should drop an empty top-level mcp_connect_url', () => {
