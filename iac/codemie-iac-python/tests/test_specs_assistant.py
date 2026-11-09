@@ -306,14 +306,15 @@ def test_assistant_flags_stay_unset_when_the_document_omits_them():
     assert spec.interactive_enabled is None and spec.enable_image_generation is None
 
 
-def test_skill_ids_default_to_empty_and_validate():
+def test_skill_ids_are_unset_by_default_and_validate():
     base = {
         "name": "a",
         "description": "d",
         "system_prompt": "p",
         "llm_model_type": "gpt",
     }
-    assert AssistantSpec.model_validate(base).skill_ids == []
+    assert AssistantSpec.model_validate(base).skill_ids is None
+    assert AssistantSpec.model_validate({**base, "skill_ids": []}).skill_ids == []
     spec = AssistantSpec.model_validate({**base, "skill_ids": ["s1", "s2"]})
     assert spec.skill_ids == ["s1", "s2"]
 

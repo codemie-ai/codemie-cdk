@@ -25,8 +25,10 @@ and only substituted into request bodies; they are never written anywhere.
 Datasource ``create`` returns no id, so ``created_id`` looks the new
 datasource up by project and name in the target project and reports its id
 (none when the platform does not list it yet). Assistants reference
-datasources by ``context`` name (the SDK ``Context`` has no id), so nothing
-else needs the id.
+datasources by ``context`` name (the SDK ``Context`` has no id), but a
+workflow agent lists them by id, so resolving such a reference waits a bounded
+time for the listing to show the new datasource (code and provider datasources
+are indexed in a background task) and fails with a clear error if it never does.
 
 ``build_resolved`` (and ``ResolveContext``) are reusable by single-entity
 apply: they turn a document's name references and credential refs into the
@@ -231,13 +233,19 @@ def _mcp_body(server: dict, ctx: ResolveContext) -> dict:
 def _assistant_resolved(document: Document, ctx: ResolveContext) -> dict:
     spec = document.spec
     dumped = spec.model_dump(mode="python")
-    return {
+    resolved = {
         "assistant_ids": ctx.ids(DocumentKind.ASSISTANT, spec.assistant_ids),
-        "skill_ids": ctx.value_ids(DocumentKind.SKILL, spec.skill_ids, document),
         "categories": ctx.ids(DocumentKind.CATEGORY, spec.categories),
         "toolkits": [_toolkit_body(t, ctx) for t in dumped["toolkits"]],
         "mcp_servers": [_mcp_body(s, ctx) for s in dumped["mcp_servers"]],
     }
+    # An omitted ``skill_ids`` is neither diffed nor sent, so skills attached
+    # outside the document survive; an explicit empty list clears them.
+    if spec.skill_ids is not None:
+        resolved["skill_ids"] = ctx.value_ids(
+            DocumentKind.SKILL, spec.skill_ids, document
+        )
+    return resolved
 
 
 def _integration_resolved(document: Document, ctx: ResolveContext) -> dict:

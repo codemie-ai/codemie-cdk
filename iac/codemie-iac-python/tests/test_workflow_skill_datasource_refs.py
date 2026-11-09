@@ -35,7 +35,7 @@ UUID_B = "223e4567-e89b-12d3-a456-426614174001"
 
 
 class _Skills:
-    def list(self, page=0, per_page=100):
+    def list(self, page=0, per_page=100, filters=None):
         items = [SimpleNamespace(id="sk-id", name="my-skill", project=TARGET)]
         return SimpleNamespace(skills=items if page == 0 else [])
 

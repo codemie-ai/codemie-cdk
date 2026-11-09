@@ -417,7 +417,8 @@ automatically.
 
 `AssistantSpec.skill_ids` lists the skills attached to the assistant. Each
 entry is a reference resolved when the document is applied (see below), and
-an omitted field means no skills. The assistant request of the installed
+an omitted field leaves the skills attached on the platform untouched (they
+are neither compared nor sent), while `skill_ids: []` detaches them all. The assistant request of the installed
 `codemie-sdk-python` must carry `skill_ids`; if it does not, applying an
 assistant that lists skills fails (`unsupported_sdk`) before anything is
 written, instead of creating the assistant without its skills.

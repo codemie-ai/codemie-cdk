@@ -43,7 +43,7 @@ class _Skills:
     def __init__(self, items):
         self.items = items
 
-    def list(self, page=0, per_page=100):
+    def list(self, page=0, per_page=100, filters=None):
         return SimpleNamespace(skills=self.items if page == 0 else [])
 
 

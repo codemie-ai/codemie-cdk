@@ -15,6 +15,7 @@
 from types import SimpleNamespace
 
 import yaml
+from codemie_sdk.models.assistant import AssistantCreateRequest, AssistantUpdateRequest
 from codemie_sdk.builders.workflow.definition import (
     WorkflowAssistant,
     WorkflowDefinition,
@@ -25,6 +26,7 @@ from codemie_iac.envelope import Document, DocumentKind, DocumentMeta
 from codemie_iac.plan_apply.bulk_create import ResolveContext, build_resolved
 from codemie_iac.plan_apply.credentials import EnvCredentialResolver
 from codemie_iac.plan_apply.field_policy import policy_for
+from codemie_iac.plan_apply import kinds
 from codemie_iac.plan_apply.kinds import adapter_for
 from codemie_iac.plan_apply.lookup import NameLookup
 from codemie_iac.plan_apply.single_apply import Difference, diff
@@ -37,7 +39,7 @@ TARGET = "proj"
 
 
 class _Skills:
-    def list(self, page=0, per_page=100):
+    def list(self, page=0, per_page=100, filters=None):
         items = [
             SimpleNamespace(id=f"id-{n}", name=n, project=TARGET) for n in ("sa", "sb")
         ]
@@ -142,3 +144,50 @@ def test_assistant_skills_in_a_different_order_are_not_a_difference():
 def test_assistant_with_a_changed_skill_is_a_difference():
     findings = _findings(_assistant_doc(["sa"]), _live_assistant(["id-sb"]))
     assert [f.field for f in findings if isinstance(f, Difference)] == ["skill_ids"]
+
+
+def test_omitted_skill_ids_are_not_resolved_or_compared():
+    doc = _assistant_doc(None)
+    assert "skill_ids" not in build_resolved(doc, _ctx())
+    assert _findings(doc, _live_assistant(["id-sa"])) == []
+
+
+def test_empty_skill_ids_are_a_difference_that_clears_the_skills():
+    doc = _assistant_doc([])
+    assert build_resolved(doc, _ctx())["skill_ids"] == []
+    findings = _findings(doc, _live_assistant(["id-sa"]))
+    assert [f.field for f in findings if isinstance(f, Difference)] == ["skill_ids"]
+
+
+def _update_wire(skill_ids):
+    """The update body an SDK that carries ``skill_ids`` would send."""
+
+    class _Create(AssistantCreateRequest):
+        skill_ids: list[str] | None = None
+
+    class _Update(AssistantUpdateRequest):
+        skill_ids: list[str] | None = None
+
+    adapter = kinds._make_adapter(
+        service="assistants",
+        body=kinds._spec_body,
+        create_cls=_Create,
+        update_cls=_Update,
+    )
+    doc = _assistant_doc(skill_ids)
+    client = FakeClient()
+    adapter.update(client, doc, "asst-1", build_resolved(doc, _ctx()))
+    request = client.assistants.calls_to("update")[0].args[1]
+    return request.model_dump(exclude_none=True)
+
+
+def test_update_without_skill_ids_does_not_send_them():
+    assert "skill_ids" not in _update_wire(None)
+
+
+def test_update_with_empty_skill_ids_sends_the_empty_list():
+    assert _update_wire([])["skill_ids"] == []
+
+
+def test_update_with_named_skills_sends_their_ids():
+    assert _update_wire(["sa"])["skill_ids"] == ["id-sa"]

@@ -40,7 +40,7 @@ def _assistant_integrations(spec) -> Iterator[str]:
 
 
 def _assistant_value_edges(spec) -> Iterator[Edge]:
-    for name in spec.skill_ids:
+    for name in spec.skill_ids or ():
         yield DocumentKind.SKILL, name
 
 
