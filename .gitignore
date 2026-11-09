@@ -20,6 +20,4 @@ venv/
 .claude/settings.local.json
 .codegraph/
 .superpowers
-docs/superpowers/tasks/
-docs/superpowers/runs/
-docs/superpowers/qa-tasks/
+docs/superpowers/
