@@ -58,9 +58,7 @@ describe('assistant create result handling', () => {
       validation: { has_missing_integrations: true, message: 'Configure integration' },
     });
     const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
-    await expect(createAssistantAndGetId({ assistants } as unknown as CodeMieClient, params)).resolves.toBe(
-      'saved-id'
-    );
+    await expect(createAssistantAndGetId({ assistants } as unknown as CodeMieClient, params)).resolves.toBe('saved-id');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Configure integration'));
     expect(assistants.list).not.toHaveBeenCalled();
     warnSpy.mockRestore();
