@@ -16,13 +16,15 @@
 drop them, and applied normally once the SDK carries the field."""
 
 import pytest
+from codemie_sdk.models.assistant import AssistantCreateRequest, AssistantUpdateRequest
 
 from codemie_iac.envelope import Document, DocumentKind, DocumentMeta
-from codemie_iac.plan_apply import guards
+from codemie_iac.plan_apply import guards, kinds
 from codemie_iac.plan_apply.bulk_create import BulkCreator
 from codemie_iac.plan_apply.errors import ApplyError
 from codemie_iac.plan_apply.guards import guard_supported
 from codemie_iac.specs.assistant import AssistantSpec
+from codemie_iac.specs.skill import SkillSpec
 
 from .plan_apply.fakes import FakeClient
 
@@ -82,6 +84,53 @@ def test_bulk_apply_fails_before_any_write(monkeypatch):
 )
 def test_skill_ids_reach_the_create_request():
     client = FakeClient()
-    BulkCreator(client).create_all([_assistant([UUID])], TARGET)
+    skill = Document(
+        version="v1",
+        meta=DocumentMeta(kind=DocumentKind.SKILL, name="my-skill"),
+        spec=SkillSpec(
+            name="my-skill",
+            description="A valid skill description",
+            content="c" * 100,
+            project=TARGET,
+        ),
+    )
+    client = FakeClient()
+    BulkCreator(client).create_all([_assistant(["my-skill"]), skill], TARGET)
     (call,) = [c for c in client.assistants.calls if c.method == "create"]
-    assert call.args[0].skill_ids == [UUID]
+    # The name resolves to the id the created skill got, not the name itself.
+    assert call.args[0].skill_ids == ["skill-1"]
+
+
+def test_skill_ids_reach_the_request_on_an_sdk_that_carries_them(monkeypatch):
+    # Stand-in request classes declare the field the pinned SDK may lack, so
+    # this runs on every SDK, unlike the test above.
+    class _Create(AssistantCreateRequest):
+        skill_ids: list[str] = []
+
+    class _Update(AssistantUpdateRequest):
+        skill_ids: list[str] = []
+
+    adapter = kinds._make_adapter(
+        service="assistants",
+        body=kinds._spec_body,
+        create_cls=_Create,
+        update_cls=_Update,
+    )
+    monkeypatch.setitem(kinds.ADAPTERS, DocumentKind.ASSISTANT, adapter)
+    _sdk_supports(monkeypatch, True)
+    client = FakeClient()
+    skill = Document(
+        version="v1",
+        meta=DocumentMeta(kind=DocumentKind.SKILL, name="my-skill"),
+        spec=SkillSpec(
+            name="my-skill",
+            description="A valid skill description",
+            content="c" * 100,
+            project=TARGET,
+        ),
+    )
+    client = FakeClient()
+    BulkCreator(client).create_all([_assistant(["my-skill"]), skill], TARGET)
+    (call,) = [c for c in client.assistants.calls if c.method == "create"]
+    # The name resolves to the id the created skill got, not the name itself.
+    assert call.args[0].skill_ids == ["skill-1"]
