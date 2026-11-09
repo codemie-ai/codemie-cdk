@@ -183,34 +183,36 @@ describe('deployAssistants', () => {
     expect(client.assistants.update).not.toHaveBeenCalled();
   });
 
-  it('does not record a rejected update as synchronized', async () => {
+  it('records an update that reports missing integrations and warns', async () => {
     const cfg = baseConfig();
     const assistant: AssistantResource = {
-      name: 'Rejected update',
+      name: 'Warned update',
       description: 'desc',
-      prompt: 'system_prompts/rejected.md',
+      prompt: 'system_prompts/warned.md',
       model: 'gpt-4',
     };
     fs.writeFileSync(path.join(dir, assistant.prompt), 'NEW_PROMPT');
     cfg.resources.assistants = [assistant];
     state.updateAssistantState(assistant.name, 'existing-id', 'OLD_PROMPT', assistant);
-    const before = state.getAssistantState(assistant.name);
     (client.assistants.get as jest.Mock).mockResolvedValue({ id: 'existing-id' });
     (client.assistants.update as jest.Mock).mockResolvedValue({
       validation: { has_missing_integrations: true, message: 'Configure tools' },
     });
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
     const stats = await deployAssistants(cfg, client, loader, state);
-    expect(stats.failed).toBe(1);
-    expect(stats.updated).toBe(0);
-    expect(state.getAssistantState(assistant.name)).toEqual(before);
+    expect(stats.failed).toBe(0);
+    expect(stats.updated).toBe(1);
+    expect(state.getAssistantState(assistant.name)?.id).toBe('existing-id');
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Configure tools'));
+    warnSpy.mockRestore();
   });
 
-  it('does not write state after a recovered assistant rejects its update', async () => {
+  it('records a recovered assistant whose update reports missing integrations', async () => {
     const cfg = baseConfig();
     const assistant: AssistantResource = {
-      name: 'Rejected recovery',
+      name: 'Warned recovery',
       description: 'desc',
-      prompt: 'system_prompts/rejected.md',
+      prompt: 'system_prompts/warned.md',
       model: 'gpt-4',
     };
     fs.writeFileSync(path.join(dir, assistant.prompt), 'PROMPT');
@@ -220,10 +222,12 @@ describe('deployAssistants', () => {
     );
     (client.assistants.list as jest.Mock).mockResolvedValue([{ id: 'existing-id', name: assistant.name }]);
     (client.assistants.update as jest.Mock).mockResolvedValue({ validation: { has_missing_integrations: true } });
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
     const stats = await deployAssistants(cfg, client, loader, state);
-    expect(stats.failed).toBe(1);
-    expect(stats.updated).toBe(0);
-    expect(state.getAssistantState(assistant.name)).toBeUndefined();
+    expect(stats.failed).toBe(0);
+    expect(stats.updated).toBe(1);
+    expect(state.getAssistantState(assistant.name)?.id).toBe('existing-id');
+    warnSpy.mockRestore();
   });
 
   it('should update assistant when prompt content changed', async () => {

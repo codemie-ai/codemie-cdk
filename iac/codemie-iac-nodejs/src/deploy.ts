@@ -16,7 +16,7 @@ import type { AppConfig } from './appConfig';
 import { logApiErrorDetails } from './lib/apiErrorLogger';
 import {
   createAssistantAndGetId,
-  assertAssistantValidationSucceeded,
+  warnOnMissingIntegrations,
   shouldRecoverAssistantCreateError,
 } from './lib/assistantHelpers';
 import { calculateChecksum, calculateAssistantConfigChecksum } from './lib/checksumUtils';
@@ -295,7 +295,7 @@ export async function deployAssistants(
             }
 
             const updateResponse = await client.assistants.update(existingState.id, apiParams);
-            assertAssistantValidationSucceeded(updateResponse, 'update', assistant.name);
+            warnOnMissingIntegrations(updateResponse, assistant.name);
             logger.info(`✓ Updated assistant: ${assistant.name} (${existingState.id})`);
 
             stateManager.updateAssistantState(assistant.name, existingState.id, promptContent, assistant, buildConfig);
@@ -351,7 +351,7 @@ export async function deployAssistants(
 
             logger.info(`  Found existing assistant ID: ${existingId}. Updating...`);
             const updateResponse = await client.assistants.update(existingId, apiParams);
-            assertAssistantValidationSucceeded(updateResponse, 'update', assistant.name);
+            warnOnMissingIntegrations(updateResponse, assistant.name);
             assistantId = existingId;
             logger.info(`✓ Recovered and updated assistant: ${assistant.name} (${assistantId})`);
             stats.updated++;
@@ -403,7 +403,7 @@ export async function deployAssistants(
 
           logger.info(`  Found existing assistant ID: ${existingId}. Updating...`);
           const updateResponse = await client.assistants.update(existingId, apiParams);
-          assertAssistantValidationSucceeded(updateResponse, 'update', assistant.name);
+          warnOnMissingIntegrations(updateResponse, assistant.name);
           assistantId = existingId;
           logger.info(`✓ Recovered and updated assistant: ${assistant.name} (${assistantId})`);
           stats.updated++;

@@ -6,6 +6,7 @@
  */
 import type { CodeMieClient, AssistantCreateParams } from 'codemie-sdk';
 
+import { logger } from './logger';
 import { findAssistantByName } from './paginationUtils';
 
 const ASSISTANT_LOOKUP_RETRY_DELAYS_MS = [250, 500, 1000, 2000, 2000] as const;
@@ -23,21 +24,43 @@ export class AssistantValidationError extends Error {
     assistantName: string,
     readonly response: unknown
   ) {
-    const validation = isRecord(response) && isRecord(response.validation) ? response.validation : {};
-    const message = typeof validation.message === 'string' ? validation.message : 'Missing integrations';
+    const message = isRecord(response) ? validationMessage(response) : 'Missing integrations';
     super(`Assistant ${operation} validation failed for "${assistantName}": ${message}`);
     this.name = 'AssistantValidationError';
   }
 }
 
-export function assertAssistantValidationSucceeded(
-  response: unknown,
-  operation: 'create' | 'update',
-  assistantName: string
-): void {
-  if (isRecord(response) && isRecord(response.validation) && response.validation.has_missing_integrations === true) {
-    throw new AssistantValidationError(operation, assistantName, response);
+function hasMissingIntegrations(response: unknown): response is Record<string, unknown> {
+  return isRecord(response) && isRecord(response.validation) && response.validation.has_missing_integrations === true;
+}
+
+function validationMessage(response: Record<string, unknown>): string {
+  const validation = isRecord(response.validation) ? response.validation : {};
+  return typeof validation.message === 'string' ? validation.message : 'Missing integrations';
+}
+
+/**
+ * An update that reports missing integrations has still been saved; surface the
+ * message without failing the deploy, otherwise the same warning would block
+ * every future run and the state would never converge.
+ */
+export function warnOnMissingIntegrations(response: unknown, assistantName: string): void {
+  if (hasMissingIntegrations(response)) {
+    logger.warn(`  ⚠️  Assistant "${assistantName}" saved with missing integrations: ${validationMessage(response)}`);
   }
+}
+
+function extractAssistantId(response: unknown): string | null {
+  if (!isRecord(response)) {
+    return null;
+  }
+  for (const key of ['assistant_id', 'assistantId', 'id']) {
+    const id = response[key];
+    if (typeof id === 'string' && id.trim().length > 0) {
+      return id.trim();
+    }
+  }
+  return null;
 }
 
 /** Validation and authorization failures cannot be repaired by adopting another ID. */
@@ -89,15 +112,18 @@ export async function createAssistantAndGetId(
   slug?: string | null
 ): Promise<string> {
   const response: unknown = await client.assistants.create(params);
-  assertAssistantValidationSucceeded(response, 'create', params.name);
+  const returnedId = extractAssistantId(response);
 
-  if (isRecord(response)) {
-    for (const key of ['assistant_id', 'assistantId', 'id']) {
-      const id = response[key];
-      if (typeof id === 'string' && id.trim().length > 0) {
-        return id.trim();
-      }
+  if (hasMissingIntegrations(response)) {
+    // Without an ID the platform refused to save the assistant; with one it was saved with a warning.
+    if (!returnedId) {
+      throw new AssistantValidationError('create', params.name, response);
     }
+    warnOnMissingIntegrations(response, params.name);
+  }
+
+  if (returnedId) {
+    return returnedId;
   }
 
   if (slug) {

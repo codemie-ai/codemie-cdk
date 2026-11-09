@@ -1,6 +1,7 @@
 import type { AssistantCreateParams, CodeMieClient } from 'codemie-sdk';
 
 import { AssistantValidationError, createAssistantAndGetId } from './assistantHelpers';
+import { logger } from './logger';
 
 const params: AssistantCreateParams = {
   name: 'Example Assistant',
@@ -34,10 +35,10 @@ describe('assistant create result handling', () => {
     expect(assistants.getBySlug).not.toHaveBeenCalled();
   });
 
-  it('rejects validation before lookup, even if the response includes an ID', async () => {
+  it('rejects a validation refusal that carries no ID, without lookup', async () => {
     const assistants = services();
     const response = {
-      assistantId: 'unsafe-id',
+      assistantId: null,
       validation: { has_missing_integrations: true, message: 'Configure integration' },
     };
     assistants.create.mockResolvedValue(response);
@@ -48,6 +49,21 @@ describe('assistant create result handling', () => {
     });
     expect(assistants.list).not.toHaveBeenCalled();
     expect(assistants.getBySlug).not.toHaveBeenCalled();
+  });
+
+  it('returns the ID and warns when the assistant was saved with missing integrations', async () => {
+    const assistants = services();
+    assistants.create.mockResolvedValue({
+      assistantId: 'saved-id',
+      validation: { has_missing_integrations: true, message: 'Configure integration' },
+    });
+    const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
+    await expect(createAssistantAndGetId({ assistants } as unknown as CodeMieClient, params)).resolves.toBe(
+      'saved-id'
+    );
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Configure integration'));
+    expect(assistants.list).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 
   it('retries a genuinely missing ID until the index catches up', async () => {
