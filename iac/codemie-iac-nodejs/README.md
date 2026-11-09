@@ -78,7 +78,16 @@ The `.env` file is already added to `.gitignore` and should never be committed t
 **Substitution in `codemie.yaml`:**
 - `${VAR}` and `${VAR:-default}` are substituted in every string value of the configuration, including values nested inside lists such as `resources.skills` or `resources.datasources`.
 - A `${VAR}` without a default whose variable is not set fails the load with an error naming the configuration path, for example `resources.datasources[0].name`. Use `${VAR:-default}` where a value is optional, or `${VAR:-}` to substitute an empty string.
-- There is no escape syntax: every `${...}` occurrence in a string value is substituted, so a configuration cannot carry a literal `${VAR}` through the loader.
+- Escape a placeholder with an extra `$`: `$${VAR}` produces literal `${VAR}` without looking up the variable, even if it is set locally. This also preserves default expressions: `$${VAR:-default}` produces `${VAR:-default}`.
+- Escaped placeholders and ordinary substitutions can appear in the same string. Substitution happens once; emitted placeholders and environment variable values are not expanded again. Dollar signs outside placeholder expressions are unchanged.
+
+For example, an MCP server can receive a placeholder for CodeMie to resolve later, without requiring a local npm token:
+
+```yaml
+config:
+  env:
+    NPM_TOKEN: '$${NPM_TOKEN}'
+```
 
 ## Quick Start
 
