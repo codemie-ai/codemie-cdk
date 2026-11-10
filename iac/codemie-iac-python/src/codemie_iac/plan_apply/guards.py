@@ -22,7 +22,11 @@ by comparing the document with the live datasource, before any write.
 from collections.abc import Mapping
 from typing import Any
 
-from codemie_sdk.models.assistant import AssistantCreateRequest, AssistantUpdateRequest
+from codemie_sdk.models.assistant import (
+    Assistant,
+    AssistantCreateRequest,
+    AssistantUpdateRequest,
+)
 
 from ..envelope import Document, DocumentKind
 from .errors import ApplyError
@@ -70,11 +74,12 @@ def _error(document: Document, error_type: str, reason: str) -> ApplyError:
 
 
 def _sdk_carries_assistant_skills() -> bool:
-    """Whether the installed SDK's assistant requests have a ``skill_ids``
-    field. Older SDKs ignore unknown fields, so skills would be dropped."""
+    """Whether the installed SDK's assistant requests and the live assistant
+    model have a ``skill_ids`` field. Older SDKs ignore unknown fields, so
+    skills would be dropped on write and missing from the plan diff."""
     return all(
         "skill_ids" in cls.model_fields
-        for cls in (AssistantCreateRequest, AssistantUpdateRequest)
+        for cls in (Assistant, AssistantCreateRequest, AssistantUpdateRequest)
     )
 
 
@@ -82,7 +87,8 @@ def guard_supported(document: Document) -> None:
     """Raise ``ApplyError`` for what cannot be written: a file datasource (no
     adapter is consulted), a workflow without a description (the platform
     requires one, and the update request rejects an empty one), or an assistant
-    with ``skill_ids`` when the installed SDK cannot send them."""
+    with ``skill_ids`` (even an empty list, which detaches skills) when the
+    installed SDK cannot send them."""
     if document.meta.kind is DocumentKind.WORKFLOW:
         if not (document.spec.workflow.description or "").strip():
             raise _error(
@@ -98,7 +104,7 @@ def guard_supported(document: Document) -> None:
         )
     if (
         document.meta.kind is DocumentKind.ASSISTANT
-        and document.spec.skill_ids
+        and document.spec.skill_ids is not None
         and not _sdk_carries_assistant_skills()
     ):
         raise _error(

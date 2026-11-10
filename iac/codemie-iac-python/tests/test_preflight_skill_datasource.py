@@ -123,6 +123,16 @@ def test_uuid_values_pass_preflight_and_reach_the_workflow():
     assert UUID in client.workflows.calls_to("create_workflow")[0].args[0].yaml_config
 
 
+def test_unverified_uuid_is_logged_as_a_warning(caplog):
+    client = FakeClient(skills=_ListedSkills(), datasources=_ListedDatasources())
+    with caplog.at_level("WARNING"):
+        BulkCreator(client).create_all([_workflow(skills=[UUID])], TARGET)
+    assert any(
+        UUID in r.getMessage() and "without checking" in r.getMessage()
+        for r in caplog.records
+    )
+
+
 def test_in_bundle_skill_is_created_first_and_its_id_is_used():
     client = FakeClient(skills=_ListedSkills(), datasources=_ListedDatasources())
     report = BulkCreator(client).create_all(

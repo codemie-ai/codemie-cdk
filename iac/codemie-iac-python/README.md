@@ -418,10 +418,14 @@ automatically.
 `AssistantSpec.skill_ids` lists the skills attached to the assistant. Each
 entry is a reference resolved when the document is applied (see below), and
 an omitted field leaves the skills attached on the platform untouched (they
-are neither compared nor sent), while `skill_ids: []` detaches them all. The assistant request of the installed
-`codemie-sdk-python` must carry `skill_ids`; if it does not, applying an
-assistant that lists skills fails (`unsupported_sdk`) before anything is
-written, instead of creating the assistant without its skills.
+are neither compared nor sent), while `skill_ids: []` detaches them all. The installed
+`codemie-sdk-python` must carry `skill_ids` on the assistant create, update
+and read models; if it does not, applying an assistant that sets `skill_ids`
+(even `skill_ids: []`) fails (`unsupported_sdk`) before anything is written,
+instead of silently dropping the skills. No `codemie-sdk-python` release up
+to 0.1.711 carries it, so assistant `skill_ids` works once a release that
+includes the change is installed and the pin in `pyproject.toml` is raised to
+it.
 
 **Resolving skill and datasource references.** An assistant's `skill_ids` and
 a workflow agent's `skill_ids` and `datasource_ids` are written as names. Each
@@ -432,7 +436,14 @@ is sent unchanged, so documents holding raw ids keep working; (4) otherwise,
 or when a name matches more than one entity, the apply fails with an error
 naming the reference and the document holding it, before anything is written.
 In-bundle skills and datasources are created before the assistant or workflow
-that uses them.
+that uses them. A value that falls under (3) is not checked against the
+platform, so a mistyped, deleted or other-project id is only rejected when the
+platform uses it; the apply logs a warning for each one. One failure can
+happen after writes: a datasource or integration created earlier in the same
+apply must show up in the platform's listing within about 30 seconds before a
+document that references it by name can be created. If it does not, that
+document fails with `unresolved_reference` and the entities already created
+stay (apply the remaining documents again, not the whole bundle).
 
 ### Workflow
 
@@ -598,11 +609,12 @@ by name afterwards.
 Some things are refused up front, with a clear error, before anything is
 written.
 
-**Workflow references by name stop at assistants and integrations.** A
-workflow's `datasource_ids`, `skill_ids` and `states[].workflow_id` are not
-resolved by name or ordered, and a workflow needs a non-empty description.
-`from_entity` copies the ids and names an entity carries; it does not turn
-platform ids into the names this tool resolves, so build documents with names.
+**Workflow state references are not resolved by name.** A workflow's
+`states[].workflow_id` is not resolved by name or ordered (its agents'
+`skill_ids` and `datasource_ids` are, see above), and a workflow needs a
+non-empty description. `from_entity` copies the ids and names an entity
+carries; it does not turn platform ids into the names this tool resolves, so
+build documents with names.
 
 **A datasource cannot be renamed or moved to another project.** If the
 document's datasource name or project differs from the live datasource you

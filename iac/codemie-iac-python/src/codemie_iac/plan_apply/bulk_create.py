@@ -149,6 +149,14 @@ class ResolveContext:
         if live is not None:
             return live.id
         if _is_uuid(value):
+            _LOG.warning(
+                "%s %r is not in the bundle or in project %r; sending it as a "
+                "platform id without checking that it exists (referenced by %s)",
+                kind.value,
+                value,
+                self.lookup.target,
+                _label(owner),
+            )
             return value
         raise UnresolvedReferenceError(
             "unresolved_reference",

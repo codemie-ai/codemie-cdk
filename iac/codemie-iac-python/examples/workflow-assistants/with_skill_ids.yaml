@@ -1,5 +1,6 @@
-# Inline workflow assistant with a skill: `skill_ids` takes platform skill
-# ids (not document names).
+# Inline workflow assistant with a skill: `skill_ids` takes a skill name (a
+# skill document in the bundle, or a skill in the target project) or a
+# platform skill id.
 ---
 version: v1
 meta:

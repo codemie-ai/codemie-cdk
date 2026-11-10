@@ -65,9 +65,31 @@ def test_skills_are_accepted_when_the_sdk_can_send_them(monkeypatch):
     guard_supported(_assistant([UUID]))
 
 
-def test_assistant_without_skills_is_unaffected(monkeypatch):
+def test_assistant_without_skill_ids_is_unaffected(monkeypatch):
     _sdk_supports(monkeypatch, False)
-    guard_supported(_assistant([]))
+    guard_supported(_assistant(None))
+
+
+def test_empty_skill_ids_are_rejected_when_the_sdk_cannot_send_them(monkeypatch):
+    _sdk_supports(monkeypatch, False)
+    with pytest.raises(ApplyError) as exc:
+        guard_supported(_assistant([]))
+    assert exc.value.error_type == "unsupported_sdk"
+
+
+def test_the_live_assistant_model_must_carry_skill_ids_too(monkeypatch):
+    class _Request:
+        model_fields = {"skill_ids": None}
+
+    class _Live:
+        model_fields: dict = {}
+
+    monkeypatch.setattr(guards, "AssistantCreateRequest", _Request)
+    monkeypatch.setattr(guards, "AssistantUpdateRequest", _Request)
+    monkeypatch.setattr(guards, "Assistant", _Live)
+    assert guards._sdk_carries_assistant_skills() is False
+    monkeypatch.setattr(guards, "Assistant", _Request)
+    assert guards._sdk_carries_assistant_skills() is True
 
 
 def test_bulk_apply_fails_before_any_write(monkeypatch):
