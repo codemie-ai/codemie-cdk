@@ -1,0 +1,17 @@
+# Integration with prefixed credential keys: the OpenAPI type stores its
+# settings as `openapi_spec` and `openapi_api_key`, not `spec` and `api_key`.
+# A key the platform does not know is stored but shows as empty.
+---
+version: v1
+meta:
+  kind: integration
+  name: openapi-crm
+spec:
+  project_name: my-project
+  alias: openapi-crm
+  credential_type: OpenAPI
+  credential_values:
+    - key: openapi_spec
+      ref: env:OPENAPI_CRM_OPENAPI_SPEC
+    - key: openapi_api_key
+      ref: env:OPENAPI_CRM_OPENAPI_API_KEY

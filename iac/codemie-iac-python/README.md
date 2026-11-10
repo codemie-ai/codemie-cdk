@@ -130,7 +130,7 @@ No network call is made — the schema ships inside the package.
 ### Credentials are references, never values
 
 A credential field never holds a secret. It holds a reference such as
-`env:JIRA_PROD_API_TOKEN`, built by `CredentialRef.from_entity(identifier,
+`env:JIRA_PROD_TOKEN`, built by `CredentialRef.from_entity(identifier,
 credential_key)`. That function never reads the real secret value — only the
 identifier and the key — so the same two inputs always produce the same
 reference. See the Integration example below for it in context.
@@ -217,7 +217,11 @@ integration = Integration(
     project_name="my-project",
     alias="jira-prod",
     credential_type=CredentialTypes.JIRA,
-    credential_values=[CredentialValues(key="api_token", value="<kept out of the document>")],
+    credential_values=[
+        CredentialValues(key="url", value="https://jira.example.com"),
+        CredentialValues(key="username", value="<kept out of the document>"),
+        CredentialValues(key="token", value="<kept out of the document>"),
+    ],
 )
 
 doc = Document(
@@ -227,6 +231,21 @@ doc = Document(
 )
 print(to_yaml(Bundle([doc])))
 ```
+
+**A credential `key` must be the platform's own setting name.** The package
+does not check keys: an unknown key is stored as written, and the platform then
+shows the setting as empty and the tool fails at runtime. Some types use
+prefixed names, for example:
+
+| `credential_type` | Keys |
+|---|---|
+| `Jira` | `url`, `username`, `token`, `cloud` |
+| `Git` | `url`, `token` |
+| `Elastic` | `url`, `elastic_api_key_id`, `elastic_api_key` |
+| `OpenAPI` | `openapi_spec`, `openapi_api_key`, `openapi_username`, `is_basic_auth`, `timeout`, `auth_header_name` |
+
+The reference for a key is `env:<ALIAS>_<KEY>`, upper-cased with `-` turned
+into `_` (`openapi-answers` + `openapi_spec` is `env:OPENAPI_ANSWERS_OPENAPI_SPEC`).
 
 ### Datasource
 
@@ -396,6 +415,36 @@ server's `auth_token` becomes a `CredentialRef` keyed by that server's own
 name — the same narrowing shown in the Integration example, just applied
 automatically.
 
+`AssistantSpec.skill_ids` lists the skills attached to the assistant. Each
+entry is a reference resolved when the document is applied (see below), and
+an omitted field leaves the skills attached on the platform untouched (they
+are neither compared nor sent), while `skill_ids: []` detaches them all. The installed
+`codemie-sdk-python` must carry `skill_ids` on the assistant create, update
+and read models; if it does not, applying an assistant that sets `skill_ids`
+(even `skill_ids: []`) fails (`unsupported_sdk`) before anything is written,
+instead of silently dropping the skills. No `codemie-sdk-python` release up
+to 0.1.711 carries it, so assistant `skill_ids` works once a release that
+includes the change is installed and the pin in `pyproject.toml` is raised to
+it.
+
+**Resolving skill and datasource references.** An assistant's `skill_ids` and
+a workflow agent's `skill_ids` and `datasource_ids` are written as names. Each
+value is resolved in this order: (1) a document with that name in the bundle
+wins, even if the value looks like an id; (2) otherwise the name is looked up
+in the target project; (3) otherwise a value shaped like a platform id (UUID)
+is sent unchanged, so documents holding raw ids keep working; (4) otherwise,
+or when a name matches more than one entity, the apply fails with an error
+naming the reference and the document holding it, before anything is written.
+In-bundle skills and datasources are created before the assistant or workflow
+that uses them. A value that falls under (3) is not checked against the
+platform, so a mistyped, deleted or other-project id is only rejected when the
+platform uses it; the apply logs a warning for each one. One failure can
+happen after writes: a datasource or integration created earlier in the same
+apply must show up in the platform's listing within about 30 seconds before a
+document that references it by name can be created. If it does not, that
+document fails with `unresolved_reference` and the entities already created
+stay (apply the remaining documents again, not the whole bundle).
+
 ### Workflow
 
 A workflow is built with the SDK's own `WorkflowBuilder`, not hand-filled
@@ -560,11 +609,12 @@ by name afterwards.
 Some things are refused up front, with a clear error, before anything is
 written.
 
-**Workflow references by name stop at assistants and integrations.** A
-workflow's `datasource_ids`, `skill_ids` and `states[].workflow_id` are not
-resolved by name or ordered, and a workflow needs a non-empty description.
-`from_entity` copies the ids and names an entity carries; it does not turn
-platform ids into the names this tool resolves, so build documents with names.
+**Workflow state references are not resolved by name.** A workflow's
+`states[].workflow_id` is not resolved by name or ordered (its agents'
+`skill_ids` and `datasource_ids` are, see above), and a workflow needs a
+non-empty description. `from_entity` copies the ids and names an entity
+carries; it does not turn platform ids into the names this tool resolves, so
+build documents with names.
 
 **A datasource cannot be renamed or moved to another project.** If the
 document's datasource name or project differs from the live datasource you
@@ -722,7 +772,8 @@ codemie-iac --project my-project plan examples/simple/skill.yaml --id <id> --jso
 Global flags (`--project`, `-c`) go before the subcommand, `--json` after it.
 Credentials in the examples are `env:NAME` references; export those variables
 before applying. IDs inside workflows (`workflow_id`, `datasource_ids`,
-`skill_ids`) are placeholders.
+`skill_ids`) are placeholders, or names of skills and datasources that are
+resolved at apply time.
 
 **Example files**
 
@@ -732,6 +783,7 @@ Simple (one per asset type):
 - [`simple/category.yaml`](examples/simple/category.yaml)
 - [`simple/datasource.yaml`](examples/simple/datasource.yaml)
 - [`simple/integration.yaml`](examples/simple/integration.yaml)
+- [`simple/integration_openapi.yaml`](examples/simple/integration_openapi.yaml) (prefixed credential keys)
 - [`simple/skill.yaml`](examples/simple/skill.yaml)
 - [`simple/workflow.yaml`](examples/simple/workflow.yaml)
 

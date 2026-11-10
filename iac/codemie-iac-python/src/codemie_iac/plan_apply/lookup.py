@@ -21,6 +21,7 @@ target project. Anything that resolves nowhere (or ambiguously) is an
 """
 
 from collections.abc import Callable, Iterable, Iterator, Mapping
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -35,6 +36,17 @@ EntityKey = tuple[DocumentKind, str]
 
 _PAGE_SIZE = 100
 _MAX_PAGES = 50
+
+#: A bundle entity without an id from its create (a datasource, an integration)
+#: is looked up by name afterwards, and the platform may list it a moment later
+#: (code and provider datasources are indexed in a background task). Poll for
+#: about this long before giving up.
+_ID_WAIT_ATTEMPTS = 30
+_ID_WAIT_SECONDS = 1.0
+
+
+def _wait(seconds: float) -> None:
+    time.sleep(seconds)
 
 
 @dataclass(frozen=True)
@@ -97,7 +109,13 @@ def _find_assistants(client: Any, target: str, name: str) -> list[Any]:
 
 
 def _find_skills(client: Any, target: str, name: str) -> list[Any]:
-    items = _pages(lambda p: client.skills.list(page=p, per_page=_PAGE_SIZE).skills)
+    # ``search`` is a name-contains match; the exact name is checked below.
+    filters = {"project": [target], "search": name}
+    items = _pages(
+        lambda p: client.skills.list(
+            page=p, per_page=_PAGE_SIZE, filters=filters
+        ).skills
+    )
     return [i for i in _named(items, name) if _in_project(i, target, "project")]
 
 
@@ -174,6 +192,10 @@ class NameLookup:
         self._resolver = ReferenceResolver(list(bundle))
         self._target = target
         self._client = client
+        # Live answers by (kind, name), so preflight, plan and write share one
+        # listing per value. Only ``find_live`` and ``require`` read it: a
+        # bundle entity looked up after its create must see the platform anew.
+        self._live_cache: dict[EntityKey, Any] = {}
 
     @property
     def target(self) -> str:
@@ -192,6 +214,12 @@ class NameLookup:
             if exc.ambiguous:
                 raise self._error(kind, name, str(exc)) from exc
             return None
+
+    def _cached_live(self, kind: DocumentKind, name: str) -> Any | None:
+        key = (kind, name)
+        if key not in self._live_cache:
+            self._live_cache[key] = self._live(kind, name)
+        return self._live_cache[key]
 
     def _live(
         self, kind: DocumentKind, name: str, document: Document | None = None
@@ -222,13 +250,21 @@ class NameLookup:
             "unresolved_reference", kind.value, name, reason + suffix
         )
 
+    def find_live(self, kind: DocumentKind, name: str) -> Reference | None:
+        """The live entity named ``name`` in the target project, or ``None``
+        when there is none (or no client). Raises ``UnresolvedReferenceError``
+        if more than one matches."""
+        live = self._cached_live(kind, name)
+        entity_id = getattr(live, "id", None)
+        return Reference(entity_id, live) if entity_id else None
+
     def require(
         self, kind: DocumentKind, name: str, referrer: str | None = None
     ) -> None:
         """Preflight check: the reference exists in the bundle or live."""
         if self.in_bundle(kind, name) is not None:
             return
-        if self._live(kind, name) is None:
+        if self._cached_live(kind, name) is None:
             raise self._error(
                 kind,
                 name,
@@ -253,8 +289,25 @@ class NameLookup:
         known = (created or {}).get((kind, name))
         if known is not None and document is not None:
             return Reference(known, document)
-        live = self._live(kind, _live_name(kind, document, name), document)
+        live_name = _live_name(kind, document, name)
+        live = self._live(kind, live_name, document)
+        if document is not None:
+            # Created in this run, so it exists: wait for the listing to show it.
+            for _ in range(_ID_WAIT_ATTEMPTS):
+                if getattr(live, "id", None):
+                    break
+                _wait(_ID_WAIT_SECONDS)
+                live = self._live(kind, live_name, document)
         entity_id = getattr(live, "id", None)
+        if not entity_id and document is not None:
+            raise self._error(
+                kind,
+                name,
+                f"{kind.value} {name!r} was created but is still not listed after "
+                f"{_ID_WAIT_ATTEMPTS * _ID_WAIT_SECONDS:.0f}s; apply the documents "
+                "that reference it once it is listed (applying the whole bundle "
+                "again would create it a second time)",
+            )
         if not entity_id:
             raise self._error(kind, name, f"no platform id for {kind.value} {name!r}")
         return Reference(entity_id, live)

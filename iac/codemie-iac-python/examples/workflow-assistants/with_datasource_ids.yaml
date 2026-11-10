@@ -1,5 +1,6 @@
-# Inline workflow assistant with a datasource: `datasource_ids` takes
-# platform datasource ids (not document names).
+# Inline workflow assistant with a datasource: `datasource_ids` takes a
+# datasource name (a datasource document in the bundle, or a datasource in the
+# target project) or a platform datasource id.
 ---
 version: v1
 meta:
