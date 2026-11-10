@@ -107,7 +107,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: poetry version "$VERSION"
 
-            - name: Install dependencies
+      - name: Install dependencies
         run: poetry install --no-interaction
 
       - name: Lint
