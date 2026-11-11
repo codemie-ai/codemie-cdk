@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag to check or publish, for example iac-python-v0.1.1'
+        description: 'Release tag to check or publish, for example cdk-python-v0.1.1'
         type: string
         required: true
       dry_run:
@@ -26,14 +26,14 @@ env:
 
 # One run per tag. A fixed group would keep only the newest pending run and cancel the ones in between.
 concurrency:
-  group: publish-iac-python-${{ github.event.release.tag_name || inputs.tag }}
+  group: publish-cdk-python-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
   verify:
     if: >-
       github.event_name == 'workflow_dispatch'
-      || startsWith(github.event.release.tag_name, 'iac-python-v')
+      || startsWith(github.event.release.tag_name, 'cdk-python-v')
     name: Verify and build
     runs-on: ubuntu-latest
     outputs:
@@ -98,9 +98,9 @@ jobs:
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           BASE=$(poetry version --short)
-          VERSION=$(python3 "$RUNNER_TEMP/scripts/release/check_version.py" --ecosystem pypi --name codemie-iac-python --tag "$RELEASE_TAG" --base "$BASE" --tag-prefix iac-python-v)
+          VERSION=$(python3 "$RUNNER_TEMP/scripts/release/check_version.py" --ecosystem pypi --name codemie-cdk-python --tag "$RELEASE_TAG" --base "$BASE" --tag-prefix cdk-python-v)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Releasing codemie-iac-python $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "Releasing codemie-cdk-python $VERSION" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Stamp the version
         env:
@@ -121,9 +121,9 @@ jobs:
 
       - name: Check version against PyPI
         env:
-          PACKAGE: codemie-iac-python
+          PACKAGE: codemie-cdk-python
           VERSION: ${{ steps.version.outputs.version }}
-        run: python3 "$RUNNER_TEMP/scripts/release/check_version.py" --ecosystem pypi --name codemie-iac-python --version "$VERSION"
+        run: python3 "$RUNNER_TEMP/scripts/release/check_version.py" --ecosystem pypi --name codemie-cdk-python --version "$VERSION"
 
       - name: Build package
         run: poetry build

@@ -5,7 +5,7 @@ Contributions are welcome. Please read the [Code of Conduct](CODE_OF_CONDUCT.md)
 This repository contains two packages, each in its own folder under `iac/`:
 
 - `iac/codemie-iac-nodejs`: `@codemieai/cdk` (TypeScript, Node.js 22)
-- `iac/codemie-iac-python`: `codemie-iac-python` (Python 3.12)
+- `iac/codemie-iac-python`: `codemie-cdk-python` (Python 3.12)
 
 ## How to Contribute
 

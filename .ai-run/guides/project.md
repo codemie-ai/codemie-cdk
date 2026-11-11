@@ -5,7 +5,7 @@
 | Field | Value | Source |
 |---|---|---|
 | Project name | CodeMie CDK | `README.md` |
-| Repository/package | `codemie-cdk`; packages `@codemieai/cdk` (`iac/codemie-iac-nodejs`) and `codemie-iac-python` (`iac/codemie-iac-python`, not published) | `iac/codemie-iac-nodejs/package.json`, `iac/codemie-iac-python/pyproject.toml` |
+| Repository/package | `codemie-cdk`; packages `@codemieai/cdk` (`iac/codemie-iac-nodejs`) and `codemie-cdk-python` (`iac/codemie-iac-python`) | `iac/codemie-iac-nodejs/package.json`, `iac/codemie-iac-python/pyproject.toml` |
 | Project code/key | none | user decision |
 
 ## Work Item Tracker
