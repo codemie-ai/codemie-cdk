@@ -1,13 +1,13 @@
 # Releasing
 
-`@codemieai/cdk` and `codemie-iac-python` are released by the GitHub Actions workflows `publish.yml` and `publish-python.yml`. A release starts when someone with write access publishes a GitHub Release whose tag names the version.
+`@codemieai/cdk` and `codemie-cdk-python` are released by the GitHub Actions workflows `publish.yml` and `publish-python.yml`. A release starts when someone with write access publishes a GitHub Release whose tag names the version.
 
 | Package | Registry | Workflow | Tag |
 |---------|----------|----------|-----|
 | `@codemieai/cdk` (`iac/codemie-iac-nodejs`) | npm | `publish.yml` | `cdk-vX.Y.Z` or `cdk-vX.Y.Z-rcN` |
-| `codemie-iac-python` (`iac/codemie-iac-python`) | PyPI | `publish-python.yml` | `iac-python-vX.Y.Z` or `iac-python-vX.Y.ZrcN` |
+| `codemie-cdk-python` (`iac/codemie-iac-python`) | PyPI | `publish-python.yml` | `cdk-python-vX.Y.Z` or `cdk-python-vX.Y.ZrcN` |
 
-The steps below use `@codemieai/cdk` as the example. `codemie-iac-python` follows the same flow, with these differences:
+The steps below use `@codemieai/cdk` as the example. `codemie-cdk-python` follows the same flow, with these differences:
 
 - The base line is the `version` in `iac/codemie-iac-python/pyproject.toml` (`0.1.0` today).
 - The workflow runs lint, the format check, tests and `poetry build`, then uploads the wheel and sdist to PyPI.
@@ -79,4 +79,4 @@ An administrator does these steps once. This document only lists them.
 - **Who can release.** Only people with write access can create a Release. Keep that group small.
 - **npm trusted publisher.** The workflow publishes with OpenID Connect, so no npm token is stored. In the npm settings of `@codemieai/cdk`, add a trusted publisher: repository `codemie-ai/codemie-cdk`, workflow `publish.yml`, environment `release`. Only the `publish` job has the `id-token: write` permission.
 - **First commit.** Push the first exported snapshot to the new repository as a single commit. The export carries no history.
-- **PyPI trusted publisher.** `publish-python.yml` publishes with OpenID Connect too. In the PyPI project `codemie-iac-python`, add a trusted publisher: owner `codemie-ai`, repository `codemie-cdk`, workflow `publish-python.yml`, environment `release`. For the first release, add it as a pending publisher.
+- **PyPI trusted publisher.** `publish-python.yml` publishes with OpenID Connect too. In the PyPI project `codemie-cdk-python`, add a trusted publisher: owner `codemie-ai`, repository `codemie-cdk`, workflow `publish-python.yml`, environment `release`. For the first release, add it as a pending publisher.

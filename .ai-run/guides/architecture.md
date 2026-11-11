@@ -7,7 +7,7 @@ The repository holds two independent packages. They share no code and have no wo
 | Package | Path | Role | Talks to the platform |
 |---|---|---|---|
 | `@codemieai/cdk` | `iac/codemie-iac-nodejs` | The `codemie` CLI and a library. Deploys YAML to the platform (`bin` in `package.json`) | Yes, through `codemie-sdk` |
-| `codemie-iac-python` | `iac/codemie-iac-python` | Library. Turns resources into YAML documents, reads them back, and plans or applies them on the platform (`iac/codemie-iac-python/README.md`) | Only `codemie_iac.plan_apply`, through `codemie_sdk` services |
+| `codemie-cdk-python` | `iac/codemie-iac-python` | Library. Turns resources into YAML documents, reads them back, and plans or applies them on the platform (`iac/codemie-iac-python/README.md`) | Only `codemie_iac.plan_apply`, through `codemie_sdk` services |
 
 The two packages use different document shapes. The Node.js package reads one `codemie.yaml` with `$import` and `$ref`. The Python package uses `version`/`meta`/`spec` documents (`Document` in `iac/codemie-iac-python/src/codemie_iac/envelope.py`). A file for one package is not valid for the other.
 

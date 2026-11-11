@@ -1,4 +1,4 @@
-# codemie-iac-python
+# codemie-cdk-python
 
 A small Python package that turns CodeMie resources (assistants, datasources,
 integrations, skills, categories, workflows) into plain YAML documents you can
