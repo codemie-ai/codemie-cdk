@@ -705,15 +705,17 @@ and not inspected.
 |---|---|---|
 | `project.name` | yes, unless `--project` is given | target project |
 | `environment.codemie_api_url` | yes | platform API URL |
-| `environment.username`, `environment.password` | local login; remote alternative | username and password |
+| `environment.username`, `environment.password` | local login; remote password grant | username and password |
 | `environment.auth_server_url`, `environment.auth_realm_name` | remote login | Keycloak URL and realm |
-| `environment.client_id`, `environment.client_secret` | remote login (production path) | client credentials |
+| `environment.client_id` | remote login | Keycloak client; with `client_secret` it is the production path, with `username` + `password` a password grant |
+| `environment.client_secret` | remote client credentials | client secret |
 | `environment.verify_ssl` | no | `true` (default) or `false`; empty means `true`; `false` prints a warning |
 
 An empty value counts as missing. String values may reference variables:
 `${NAME}` or `${NAME:-default}`. An unset or empty `${NAME}` without a default
 is a config error (exit 4) naming the variable; write `${NAME:-}` where an
-empty value is fine. A `$` not followed by `{` is left as is. Values come from
+empty value is fine. This applies to the whole file, including sections the CLI
+does not validate. A `$` not followed by `{` is left as is. Values come from
 the real environment and from `.env`, which only fills in unset names.
 
 ```yaml
@@ -731,21 +733,25 @@ environment:
 with `username` and `password`. Both are required; no Keycloak settings are
 needed.
 
-**Remote login.** Any other URL needs `auth_server_url`, `auth_realm_name` and
-either `client_id` + `client_secret` or `username` + `password`. A
-`username` + `password` login may also set `client_id` alone, for servers whose
-Keycloak client takes a password grant. Client
-credentials are the production path: use one service account per environment
-and keep its secret in a masked CI variable, referenced by name (for example
-`client_secret: ${CODEMIE_CLIENT_SECRET}`). When both pairs are set, client
-credentials are used. Incomplete settings stop the CLI before it contacts the
-platform, and the error names the missing `environment.*` keys.
+**Remote login (Keycloak).** Any other URL needs `auth_server_url`,
+`auth_realm_name` and `client_id`, plus one of:
+
+- `client_secret`: client credentials, the production path. Use one service
+  account per environment and keep its secret in a masked CI variable,
+  referenced by name (for example `client_secret: ${CODEMIE_CLIENT_SECRET}`).
+- `username` + `password`: a password grant for the named `client_id`.
+
+When `client_secret` is set, client credentials are used even if a username and
+password are also set. `username` and `password` without `client_id` are not
+enough for a remote URL. Incomplete settings stop the CLI before it contacts
+the platform, and the error names the missing `environment.*` keys.
 
 **Breaking change.** JWT mode (`environment.jwt_token`, `CODEMIE_JWT_TOKEN`),
 the legacy `api:` section and the fixed-name `CODEMIE_*` variables
 (`CODEMIE_API_URL`, `CODEMIE_PROJECT`, `CODEMIE_VERIFY_SSL` and the rest) are
 no longer read. `jwt_token` and `api:` are now unknown keys (a warning); to keep
-using a variable, reference it from `codemie.yaml` as `${NAME}`.
+using a variable, reference it from `codemie.yaml` as `${NAME}`. A configuration
+error raised while a command runs now exits 4 (it used to exit 2).
 
 **Trusted input.** `codemie.yaml` in the working directory decides which API
 URL receives the credentials expanded from your shell. Treat it like a

@@ -163,17 +163,15 @@ def _local_plan(settings: EnvironmentSection) -> LoginPlan:
 
 
 def _remote_plan(settings: EnvironmentSection) -> LoginPlan:
-    missing = _missing(settings, ("auth_server_url", "auth_realm_name"))
-    client = _pair_args(settings, _CLIENT_PAIR)
-    user = _pair_args(settings, _USER_PAIR)
-    if settings.client_secret and not settings.client_id:
-        missing.append("environment.client_id")
-    if not user and not client:
-        if _has_any(settings, _CLIENT_PAIR):
-            missing += _missing(settings, tuple(key for key, _ in _CLIENT_PAIR))
+    """Keycloak login: client_id + client_secret, or client_id + username + password."""
+    missing = _missing(settings, ("auth_server_url", "auth_realm_name", "client_id"))
+    uses_secret = bool(settings.client_secret)
+    if not uses_secret:
+        if _has_any(settings, _USER_PAIR):
+            missing += _missing(settings, ("username", "password"))
         else:
             missing.append(
-                "environment.client_id and environment.client_secret "
+                "environment.client_secret "
                 "(or environment.username and environment.password)"
             )
     if missing:
@@ -182,16 +180,13 @@ def _remote_plan(settings: EnvironmentSection) -> LoginPlan:
         "codemie_api_domain": settings.codemie_api_url,
         "auth_server_url": settings.auth_server_url,
         "auth_realm_name": settings.auth_realm_name,
+        "auth_client_id": settings.client_id,
     }
-    if client:
-        return LoginPlan("client_credentials", {**args, **client})
-    # A password grant may name its own client: pass client_id when set.
-    extra = {
-        arg: getattr(settings, key)
-        for key, arg in _CLIENT_PAIR
-        if getattr(settings, key)
-    }
-    return LoginPlan("password", {**args, **extra, **user})
+    if uses_secret:
+        return LoginPlan(
+            "client_credentials", {**args, "auth_client_secret": settings.client_secret}
+        )
+    return LoginPlan("password", {**args, **_pair_args(settings, _USER_PAIR)})
 
 
 def _login_plan(settings: EnvironmentSection) -> LoginPlan:

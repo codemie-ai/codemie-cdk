@@ -95,14 +95,26 @@ def test_remote_client_credentials(tmp_path):
     assert "username" not in kwargs
 
 
-def test_remote_username_password(tmp_path):
+def test_remote_client_id_username_password(tmp_path):
+    cfg = _cfg(
+        tmp_path,
+        f"  codemie_api_url: {REMOTE}\n{KEYCLOAK}  client_id: c\n"
+        "  username: u\n  password: p\n",
+    )
+    target = TargetConfig.resolve(None, cfg, {})
+    kwargs = _client_kwargs(target)
+    assert target._login.kind == "password"
+    assert kwargs["auth_client_id"] == "c" and kwargs["username"] == "u"
+    assert "auth_client_secret" not in kwargs
+
+
+def test_remote_username_password_without_client_id_is_rejected(tmp_path):
     cfg = _cfg(
         tmp_path,
         f"  codemie_api_url: {REMOTE}\n{KEYCLOAK}  username: u\n  password: p\n",
     )
-    target = TargetConfig.resolve(None, cfg, {})
-    assert target._login.kind == "password"
-    assert _client_kwargs(target)["username"] == "u"
+    with pytest.raises(ConfigError, match="environment.client_id"):
+        TargetConfig.resolve(None, cfg, {})
 
 
 def test_remote_both_pairs_prefers_client_credentials(tmp_path):
@@ -120,15 +132,22 @@ def test_remote_both_pairs_prefers_client_credentials(tmp_path):
 @pytest.mark.parametrize(
     ("body", "missing"),
     [
-        ("  auth_realm_name: r\n  username: u\n  password: p\n", "auth_server_url"),
-        ("  auth_server_url: a\n  username: u\n  password: p\n", "auth_realm_name"),
+        (
+            "  auth_realm_name: r\n  client_id: c\n  username: u\n  password: p\n",
+            "auth_server_url",
+        ),
+        (
+            "  auth_server_url: a\n  client_id: c\n  username: u\n  password: p\n",
+            "auth_realm_name",
+        ),
         ("  auth_server_url: a\n  auth_realm_name: r\n", "client_id"),
         (
             "  auth_server_url: a\n  auth_realm_name: r\n  client_id: c\n",
             "client_secret",
         ),
         (
-            "  auth_server_url: a\n  auth_realm_name: r\n  username: u\n",
+            "  auth_server_url: a\n  auth_realm_name: r\n  client_id: c\n"
+            "  username: u\n",
             "environment.password",
         ),
     ],

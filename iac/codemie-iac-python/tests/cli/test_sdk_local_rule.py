@@ -124,11 +124,11 @@ def test_remote_username_password_reach_keycloak(tmp_path):
     _, keycloak = _build(
         tmp_path,
         f"  codemie_api_url: https://api.example.com\n{KEYCLOAK}"
-        "  username: u\n  password: p\n",
+        "  client_id: c\n  username: u\n  password: p\n",
     )
     kwargs = keycloak.call_args.kwargs
     assert (kwargs["username"], kwargs["password"]) == ("u", "p")
-    assert kwargs["client_id"] is None
+    assert kwargs["client_id"] == "c" and kwargs["client_secret"] is None
 
 
 def test_both_pairs_the_cli_sends_only_client_credentials(tmp_path):

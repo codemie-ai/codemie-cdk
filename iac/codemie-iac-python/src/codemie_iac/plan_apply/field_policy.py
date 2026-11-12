@@ -58,6 +58,7 @@ _ASSISTANT = _policy(
     "user_abilities display_name version_count unique_users_count "
     "unique_likes_count unique_dislikes_count clone_count "
     # Marketplace review state is set by reviewers, not by the document.
+    # Response-only: the create and update requests do not accept them.
     "is_verified marketplace_status marketplace_decision_reason",
     comparable="name description icon_url system_prompt project llm_model_type "
     "toolkits conversation_starters shared is_react is_global slug temperature "
