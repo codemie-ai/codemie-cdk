@@ -149,7 +149,12 @@ def _local_plan(settings: EnvironmentSection) -> LoginPlan:
             "A local codemie_api_url needs username and password; missing "
             + ", ".join(missing)
         )
-    args = {"codemie_api_domain": settings.codemie_api_url}
+    # The SDK constructor requires the two Keycloak arguments even for a local URL.
+    args = {
+        "codemie_api_domain": settings.codemie_api_url,
+        "auth_server_url": "",
+        "auth_realm_name": "",
+    }
     return LoginPlan("local", {**args, **_pair_args(settings, _USER_PAIR)})
 
 
@@ -169,9 +174,10 @@ def _remote_plan(settings: EnvironmentSection) -> LoginPlan:
         "auth_server_url": settings.auth_server_url,
         "auth_realm_name": settings.auth_realm_name,
     }
-    return LoginPlan(
-        "client_credentials" if client else "password", {**args, **client, **user}
-    )
+    # The SDK prefers username/password when given both pairs: pass only the winner.
+    if client:
+        return LoginPlan("client_credentials", {**args, **client})
+    return LoginPlan("password", {**args, **user})
 
 
 def _login_plan(settings: EnvironmentSection) -> LoginPlan:

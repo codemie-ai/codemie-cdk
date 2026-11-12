@@ -59,6 +59,8 @@ def test_local_url_with_username_and_password(tmp_path):
     assert target._login.kind == "local"
     assert _client_kwargs(target) == {
         "codemie_api_domain": "http://localhost:8080",
+        "auth_server_url": "",
+        "auth_realm_name": "",
         "username": "u",
         "password": "p",
         "verify_ssl": True,
@@ -109,7 +111,10 @@ def test_remote_both_pairs_prefers_client_credentials(tmp_path):
         f"  codemie_api_url: {REMOTE}\n{KEYCLOAK}  client_id: c\n  client_secret: s\n"
         "  username: u\n  password: p\n",
     )
-    assert TargetConfig.resolve(None, cfg, {})._login.kind == "client_credentials"
+    target = TargetConfig.resolve(None, cfg, {})
+    assert target._login.kind == "client_credentials"
+    kwargs = _client_kwargs(target)
+    assert "username" not in kwargs and "password" not in kwargs
 
 
 @pytest.mark.parametrize(
