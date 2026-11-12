@@ -23,7 +23,7 @@
     }
   },
   "bin": {
-    "codemie": "./dist/cli/index.js"
+    "codemie-cdk": "./dist/cli/index.js"
   },
   "files": [
     "dist",

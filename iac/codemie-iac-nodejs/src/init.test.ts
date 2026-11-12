@@ -181,8 +181,8 @@ describe('init', () => {
       expect(logger.info).toHaveBeenCalledWith(
         expect.stringContaining('Edit .env and add your Codemie API credentials')
       );
-      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Run "codemie validate"'));
-      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Run "codemie deploy"'));
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Run "codemie-cdk validate"'));
+      expect(logger.info).toHaveBeenCalledWith(expect.stringContaining('Run "codemie-cdk deploy"'));
     });
 
     it('should reference example files in the output', async () => {

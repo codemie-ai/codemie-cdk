@@ -27,9 +27,9 @@ These commands change or delete resources on a live platform. An agent must not 
 
 | Command | Guard |
 |---|---|
-| `codemie destroy` | Must type `destroy`. `--force` skips the prompt (`src/destroy.ts`) |
-| `codemie deploy --prune` | Without the flag, orphans are reported and kept (`src/deploy.ts`) |
-| `codemie deploy --replace-skill-group` | Refuses without `--yes-replace-skills`. Skills get new ids (`src/deploy.ts`) |
+| `codemie-cdk destroy` | Must type `destroy`. `--force` skips the prompt (`src/destroy.ts`) |
+| `codemie-cdk deploy --prune` | Without the flag, orphans are reported and kept (`src/deploy.ts`) |
+| `codemie-cdk deploy --replace-skill-group` | Refuses without `--yes-replace-skills`. Skills get new ids (`src/deploy.ts`) |
 | Python `BulkCreator.create_all`, `SingleEntityPlanner.apply` | No prompt. They create or update entities with the client the caller passes in. They never delete. `plan` makes no write (`iac/codemie-iac-python/README.md`) |
 
 When you change these paths, keep the guard before the first platform call, and add a test for it. Do not make a destructive behaviour the default.

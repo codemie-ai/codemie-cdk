@@ -93,7 +93,7 @@ config:
 
 ```bash
 # Initialize a new Codemie IaC project (creates .env and codemie.yaml via wizard)
-codemie init
+codemie-cdk init
 
 # Full validation with API connectivity check (default, recommended)
 npm run validate
@@ -121,12 +121,12 @@ npm run <command>  --config codemie/iac.json
 ```
 **Note:** All commands work identically whether you use monolithic configuration or modular imports - the `$import` directives are automatically resolved during config loading.
 
-### Project Initialization (`codemie init`)
+### Project Initialization (`codemie-cdk init`)
 
 Use the interactive wizard to scaffold a project:
 
 ```bash
-codemie init
+codemie-cdk init
 ```
 
 What it does:
@@ -174,57 +174,62 @@ It is not mandatory to provide all fields - any missing fields will use default 
 
 ### CLI Usage
 
-The tool provides a unified `codemie` command for all operations:
+The tool provides a unified `codemie-cdk` command for all operations:
+
+> **Renamed from `codemie`.** Earlier releases installed the command as `codemie`. That name is
+> also used by the CodeMie agent CLI (`@codemieai/code`), so a global install of both packages
+> made one overwrite the other. Replace `codemie <command>` with `codemie-cdk <command>` in your
+> scripts and CI jobs.
 
 ```bash
 # Show help and available commands
-codemie --help
+codemie-cdk --help
 
 # Deploy resources
-codemie deploy
-codemie deploy --prune
-codemie deploy --skip-datasources
+codemie-cdk deploy
+codemie-cdk deploy --prune
+codemie-cdk deploy --skip-datasources
 
 # Other commands
-codemie backup
-codemie destroy --force
-codemie preview
-codemie validate --check-api
+codemie-cdk backup
+codemie-cdk destroy --force
+codemie-cdk preview
+codemie-cdk validate --check-api
 
 # Import a single resource from the Codemie platform
-codemie import <type> <slug>
-codemie import assistant my-assistant
-codemie import workflow 11111111-1111-1111-1111-111111111111
-codemie import assistant my-assistant --update  # refresh an already-managed resource in place
-codemie import assistant my-assistant --with-skills  # also import the project-owned skills it references
+codemie-cdk import <type> <slug>
+codemie-cdk import assistant my-assistant
+codemie-cdk import workflow 11111111-1111-1111-1111-111111111111
+codemie-cdk import assistant my-assistant --update  # refresh an already-managed resource in place
+codemie-cdk import assistant my-assistant --with-skills  # also import the project-owned skills it references
 # <type> is one of: assistant, datasource, workflow, skill
 # <slug> is a resource slug or name; for assistant and workflow it may also be a platform UUID
 
 # Run a command from a subdirectory of the project, or against another project entirely
-codemie validate --root-dir ../another-project
+codemie-cdk validate --root-dir ../another-project
 ```
 
 **`--with-skills` (assistants only).** An imported assistant references its skills by name, so a
 deploy fails if one of those skills belongs to this project but is not in `resources.skills` yet.
 With `--with-skills`, each referenced skill that the project owns and does not manage yet is
 imported too - `skills/<name>.skill.md` plus a `resources.skills` entry, exactly as
-`codemie import skill` would write it - so the assistant deploys with no manual skill import.
+`codemie-cdk import skill` would write it - so the assistant deploys with no manual skill import.
 Skills owned by other projects keep landing in `imported.skills` as references, and a skill the
 configuration already names is left untouched (also under `--update`, which refreshes the
 assistant only). On any other resource type the flag is ignored with a warning.
 
 **Note:** Every command finds the project root automatically by walking up from the current
-directory looking for `codemie.yaml`, so you can run `codemie` from any subdirectory of your
-project. Pass `-d, --root-dir <path>` to point at a different project root instead. `codemie init`
+directory looking for `codemie.yaml`, so you can run `codemie-cdk` from any subdirectory of your
+project. Pass `-d, --root-dir <path>` to point at a different project root instead. `codemie-cdk init`
 never auto-detects an existing project - it always scaffolds in the current directory unless
 `-d` is given. `-c, --config` and `-d, --root-dir` are independent: a `-c` file wins only where it
 declares `rootDir` itself, otherwise an explicit `-d` still applies.
 
 **For local development**, npm scripts provide convenient shortcuts:
 ```bash
-npm run deploy    # → codemie deploy
-npm run backup    # → codemie backup
-npm run destroy   # → codemie destroy --force
+npm run deploy    # → codemie-cdk deploy
+npm run backup    # → codemie-cdk backup
+npm run destroy   # → codemie-cdk destroy --force
 ```
 
 ## 🔄 Migrating Existing Resources to IaC
@@ -867,17 +872,17 @@ Blank lines are ignored, and every other character is literal (the `.` in `file.
 
 **Companion files are tracked in state by checksum.** `.codemie/state.json` records one content hash per companion file plus one aggregate checksum — never the file bodies. Adding, editing or removing a companion file therefore marks the skill as changed in `preview` (which names the files added, removed and modified) and triggers an update in `deploy`, even when `SKILL.md` itself is untouched. Removing the last companion file clears the skill's companion files on the platform. When state cannot say what the platform holds — a skill recovered by name after an "already exists" create, or a state entry written before companion files were tracked — the platform's own list is read first, so stale companions are cleared rather than left behind.
 
-**`backup` and `import` keep the layout.** For a skill that has companion files, `codemie backup` writes `skills/<name>/SKILL.md` with the companion files beside it under their original relative paths, decoding base64 ones back to bytes; a skill with no companion files keeps the flat `skills/<name>.skill.md` layout (content files are written for project-owned skills only). `codemie import` fetches a skill's companion files as well and writes those same two layouts, so a backed-up or imported skill redeploys with its companions intact.
+**`backup` and `import` keep the layout.** For a skill that has companion files, `codemie-cdk backup` writes `skills/<name>/SKILL.md` with the companion files beside it under their original relative paths, decoding base64 ones back to bytes; a skill with no companion files keeps the flat `skills/<name>.skill.md` layout (content files are written for project-owned skills only). `codemie-cdk import` fetches a skill's companion files as well and writes those same two layouts, so a backed-up or imported skill redeploys with its companions intact.
 
 **A failed companion lookup never touches the platform's files.** When that lookup cannot be answered — a timeout, a server error, or a platform without the companion-files endpoint — `deploy` warns, naming the skill and the reason, and updates the skill without the `companion_files` field, leaving whatever the platform holds untouched instead of failing the skill.
 
-**Only the `SKILL.md` layout manages companion files.** If a managed entry points at a flat `skills/<name>.skill.md` while the platform skill has companion files, `codemie import --update` refreshes the content file, warns, and deliberately records no companion hashes in state: those files stay on the platform, unmanaged locally. Point the entry at a `skills/<name>/SKILL.md` layout to manage them.
+**Only the `SKILL.md` layout manages companion files.** If a managed entry points at a flat `skills/<name>.skill.md` while the platform skill has companion files, `codemie-cdk import --update` refreshes the content file, warns, and deliberately records no companion hashes in state: those files stay on the platform, unmanaged locally. Point the entry at a `skills/<name>/SKILL.md` layout to manage them.
 
 #### Description Length Validation
 
 **Behavior change:** a skill description outside **10-1000 characters** now fails locally — in `validate`, `preview` and `deploy` — naming the skill, its actual length and the allowed range. Previously an out-of-range description reached the platform and failed there with an opaque API error. There is no placeholder description and no truncation: an out-of-range description is always an error, for both shapes above.
 
-Running `codemie validate --check-api` additionally checks each skill's *content* length against the platform's own configured limits, which are read live from the API rather than hard-coded in the CLI.
+Running `codemie-cdk validate --check-api` additionally checks each skill's *content* length against the platform's own configured limits, which are read live from the API rather than hard-coded in the CLI.
 
 #### Replacing a Whole Skill Group (`--replace-skill-group`)
 
@@ -885,10 +890,10 @@ Some skill sets are regenerated as a whole — a large skill split differently, 
 
 ```bash
 # See what would happen first
-codemie preview --replace-skill-group github-copilot
+codemie-cdk preview --replace-skill-group github-copilot
 
 # Then run it (the confirmation flag is mandatory)
-codemie deploy --replace-skill-group github-copilot --yes-replace-skills
+codemie-cdk deploy --replace-skill-group github-copilot --yes-replace-skills
 ```
 
 **Group membership comes only from the `group` field** — the label persisted in `.codemie/state.json` or the one on the `resources.skills` entry (including a `group` inherited from a `source_dir` entry). Skill names are never pattern-matched against the group name: a skill called `github-copilot--body-1` is not part of the group unless it carries the label.
@@ -985,7 +990,7 @@ Changes to prompts and configuration are detected via SHA256 checksums, ensuring
 
 After upgrading to the release that normalizes MCP configuration, MCP server configuration is normalized before it is hashed: keys with no value (`null`) and an empty top-level `mcp_connect_url` no longer contribute to the hash, and the remaining keys are hashed in a fixed order at every depth, so the order the platform or your YAML uses for MCP fields never affects the checksum. Every assistant that has `mcp_servers` therefore gets a new `configChecksum` once - and only once.
 
-The first `npm run preview` (or `codemie preview`) and `npm run deploy` after the upgrade list each such assistant under `⚠️  UPDATE:` as `- assistant:<name>` followed by `Prompt or configuration changed`, with no per-field diff. This is expected and is not a configuration error - nothing in your `codemie.yaml` changed. `deploy` writes the new `configChecksum` back to `.codemie/state.json`, and the second run reports the same assistants as unchanged.
+The first `npm run preview` (or `codemie-cdk preview`) and `npm run deploy` after the upgrade list each such assistant under `⚠️  UPDATE:` as `- assistant:<name>` followed by `Prompt or configuration changed`, with no per-field diff. This is expected and is not a configuration error - nothing in your `codemie.yaml` changed. `deploy` writes the new `configChecksum` back to `.codemie/state.json`, and the second run reports the same assistants as unchanged.
 
 ### Orphaned Resource Cleanup
 

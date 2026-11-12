@@ -121,8 +121,8 @@ export async function initProject(options: InitOptions): Promise<void> {
     logger.info('Next steps:');
     logger.info('  1. Edit .env and add your Codemie API credentials');
     logger.info(`  2. Edit ${appConfig.codemieConfig} and add your resources`);
-    logger.info('  3. Run "codemie validate" to check your configuration');
-    logger.info('  4. Run "codemie deploy" to deploy your resources\n');
+    logger.info('  3. Run "codemie-cdk validate" to check your configuration');
+    logger.info('  4. Run "codemie-cdk deploy" to deploy your resources\n');
 
     if (configFileName) {
       suggestConfigUsage(configFileName);

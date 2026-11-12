@@ -6,7 +6,7 @@
  */
 
 /**
- * The resource kinds `codemie import` knows how to import from the platform.
+ * The resource kinds `codemie-cdk import` knows how to import from the platform.
  */
 export type ImportResourceType = 'assistant' | 'datasource' | 'workflow' | 'skill';
 

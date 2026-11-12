@@ -168,9 +168,9 @@ skill_source_dir_with_ignore:
 # it in 'deploy' even when SKILL.md is untouched; removing the last one clears the skill's
 # companion files on the platform.
 #
-# 'codemie backup' writes a skill that has companion files as skills/<name>/SKILL.md with
+# 'codemie-cdk backup' writes a skill that has companion files as skills/<name>/SKILL.md with
 # the companions beside it, and keeps the flat skills/<name>.skill.md layout for a skill
-# with none. 'codemie import' fetches companion files too and writes the same two layouts.
+# with none. 'codemie-cdk import' fetches companion files too and writes the same two layouts.
 
 # ============================================
 # FIELD DESCRIPTIONS & NOTES
@@ -190,7 +190,7 @@ skill_source_dir_with_ignore:
 #     allowed range. It previously reached the platform and failed there with an opaque
 #     API error. There is no placeholder description and no truncation - out of range is
 #     always an error, for both shapes.
-#   - Under 'codemie validate --check-api', each skill's CONTENT length is additionally
+#   - Under 'codemie-cdk validate --check-api', each skill's CONTENT length is additionally
 #     checked against the platform's own configured limits, read live from the API
 #     rather than hard-coded in the CLI.
 #

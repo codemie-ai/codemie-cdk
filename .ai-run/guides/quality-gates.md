@@ -59,7 +59,7 @@ Before a PR, search your diff by hand for credentials, private hostnames, ticket
 
 ## Commands that are not gates
 
-Do not run `codemie deploy`, `codemie destroy`, `codemie backup`, `codemie import` or `codemie preview` for verification. They connect to a platform with the credentials in `.env`. See `.ai-run/guides/security.md`.
+Do not run `codemie-cdk deploy`, `codemie-cdk destroy`, `codemie-cdk backup`, `codemie-cdk import` or `codemie-cdk preview` for verification. They connect to a platform with the credentials in `.env`. See `.ai-run/guides/security.md`.
 
 ## Release
 
