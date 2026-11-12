@@ -21,7 +21,7 @@ import { logger } from '../lib/logger';
 import { main as previewMain } from '../preview';
 import { main as validateMain } from '../validate';
 
-program.name('codemie').description('Infrastructure as Code for Codemie platform').version(packageJson.version);
+program.name('codemie-cdk').description('Infrastructure as Code for Codemie platform').version(packageJson.version);
 
 program
   .command('init')

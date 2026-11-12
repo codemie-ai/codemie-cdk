@@ -1158,7 +1158,7 @@ export async function importResource(options: ImportOptions): Promise<void> {
             if (managedSkillName !== undefined) {
               logger.warn(
                 `     ⚠️  Skill "${skill.name}" is already managed under the name "${managedSkillName}" — not imported. ` +
-                  `Run \`codemie import skill ${skill.id} --update\` to refresh it.`
+                  `Run \`codemie-cdk import skill ${skill.id} --update\` to refresh it.`
               );
               continue;
             }

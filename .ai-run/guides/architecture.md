@@ -6,7 +6,7 @@ The repository holds two independent packages. They share no code and have no wo
 
 | Package | Path | Role | Talks to the platform |
 |---|---|---|---|
-| `@codemieai/cdk` | `iac/codemie-iac-nodejs` | The `codemie` CLI and a library. Deploys YAML to the platform (`bin` in `package.json`) | Yes, through `codemie-sdk` |
+| `@codemieai/cdk` | `iac/codemie-iac-nodejs` | The `codemie-cdk` CLI and a library. Deploys YAML to the platform (`bin` in `package.json`) | Yes, through `codemie-sdk` |
 | `codemie-cdk-python` | `iac/codemie-iac-python` | Library. Turns resources into YAML documents, reads them back, and plans or applies them on the platform (`iac/codemie-iac-python/README.md`) | Only `codemie_iac.plan_apply`, through `codemie_sdk` services |
 
 The two packages use different document shapes. The Node.js package reads one `codemie.yaml` with `$import` and `$ref`. The Python package uses `version`/`meta`/`spec` documents (`Document` in `iac/codemie-iac-python/src/codemie_iac/envelope.py`). A file for one package is not valid for the other.
@@ -36,7 +36,7 @@ The two packages use different document shapes. The Node.js package reads one `c
 | `src/codemie_iac/plan_apply/` | Plan and apply against the platform: bulk create (`BulkCreator`), single-entity plan and apply (`SingleEntityPlanner`), credential resolution (`EnvCredentialResolver`), scrubbed errors. The only module that calls the platform |
 | `src/codemie_iac/__init__.py` | Public API |
 
-## Data flow: `codemie deploy`
+## Data flow: `codemie-cdk deploy`
 
 All functions are in `iac/codemie-iac-nodejs/src`.
 

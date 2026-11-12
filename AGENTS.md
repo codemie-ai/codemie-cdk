@@ -35,7 +35,7 @@ Primary AI entrypoint for `codemie-cdk`. Load the relevant `.ai-run/guides/` fil
 | Testing | "write tests" / "run tests" | Only write or run tests when requested or when needed for verification |
 | Git Operations | "commit" / "push" / "PR" | Only then; load `.ai-run/guides/standards/git-workflow.md` |
 | Shell | ANY shell command | Use bash/Linux-compatible syntax |
-| Live platform | Any `codemie` command that connects to a platform | Do not run it unless the user asks; load `.ai-run/guides/security.md` |
+| Live platform | Any `codemie-cdk` command that connects to a platform | Do not run it unless the user asks; load `.ai-run/guides/security.md` |
 | Public repository | Any content that goes into the tree, a commit or a PR | Load the content rules in `.ai-run/guides/standards/git-workflow.md` first |
 | Scope | Any change | Find the package first; the two packages have separate gates and rules |
 

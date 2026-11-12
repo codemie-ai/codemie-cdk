@@ -24,7 +24,7 @@ This repository holds two packages. Each one has its own README with usage and e
 | [`@codemieai/cdk`](iac/codemie-iac-nodejs/README.md) | `iac/codemie-iac-nodejs` | TypeScript (Node.js 22 or later) | npm |
 | [`codemie-cdk-python`](iac/codemie-iac-python/README.md) | `iac/codemie-iac-python` | Python 3.12 or later | PyPI |
 
-The Node.js package is the `codemie` command. It deploys the YAML files to the platform. The Python package is a library that turns platform resources into YAML documents and reads them back. It has no command line tool and does not call the platform.
+The Node.js package is the `codemie-cdk` command. It deploys the YAML files to the platform. The Python package is a library that turns platform resources into YAML documents and reads them back. It has no command line tool and does not call the platform.
 
 ```bash
 npm install --save-dev @codemieai/cdk

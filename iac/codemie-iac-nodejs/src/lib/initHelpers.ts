@@ -157,9 +157,9 @@ export async function saveConfigFile(config: AppConfig, defaultFilename: string 
  */
 export function suggestConfigUsage(configFileName: string): void {
   logger.info('\n📋 To use this configuration with other commands, add the `-c` flag:\n');
-  logger.info(`  codemie deploy -c ${configFileName}`);
-  logger.info(`  codemie validate -c ${configFileName}`);
-  logger.info(`  codemie preview -c ${configFileName}`);
-  logger.info(`  codemie backup -c ${configFileName}`);
-  logger.info(`  codemie destroy -c ${configFileName}\n`);
+  logger.info(`  codemie-cdk deploy -c ${configFileName}`);
+  logger.info(`  codemie-cdk validate -c ${configFileName}`);
+  logger.info(`  codemie-cdk preview -c ${configFileName}`);
+  logger.info(`  codemie-cdk backup -c ${configFileName}`);
+  logger.info(`  codemie-cdk destroy -c ${configFileName}\n`);
 }
