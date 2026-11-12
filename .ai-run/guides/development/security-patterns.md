@@ -21,7 +21,7 @@ In `plan_apply`, `env:NAME` references are resolved from the environment only at
 
 Limit: in the Python package, some MCP fields are whole-value matches only. A secret inside a larger string is written as plain text (`iac/codemie-iac-python/README.md`). Do not describe these fields as safe.
 
-The ignore rules for `backups/` and `.env` are in the Node.js package. The root `.gitignore` covers agent state only.
+The ignore rules for `backups/` and `.env` are in the Node.js package. The root `.gitignore` covers agent state and the Python `.coverage` file.
 
 ## Destructive operations
 

@@ -25,3 +25,6 @@ venv/
 .codegraph/
 .superpowers
 docs/superpowers/
+
+# Test coverage output
+.coverage
