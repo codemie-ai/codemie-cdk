@@ -24,7 +24,7 @@ No credentials, private hostnames, ticket keys or personal e-mail addresses in t
 
 ## Merge strategy
 
-The history has no merge commits. Most merged PRs are one squashed commit with a `(#N)` suffix, but not all: some PRs landed as several commits without the suffix. Repository settings were not read, so the strategy is not confirmed. A merge to `main` never releases anything.
+Squash merge: the PR title becomes the commit subject on `main`, with a `(#N)` suffix. The repository settings allow squash and rebase and do not allow merge commits (`allow_merge_commit=false`, `squash_merge_commit_title=PR_TITLE`), and the history of `main` is all squash commits. The PR title is therefore the only message that reaches `main`, so it must follow Conventional Commits. A merge to `main` never releases anything.
 
 ## Releases
 

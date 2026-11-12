@@ -4,7 +4,7 @@ Hard refusals for every AI agent in this repository, Claude Code included. Do no
 
 `.claude/settings.json` blocks the usual spellings of this list in Claude Code: "Files never read or changed" and "Commands never run" are in `permissions.deny`, and "Actions that always need a person" are in `permissions.ask`, so the user confirms each one. The file is a guard, not a security boundary: a shell glob, a script, a subprocess or another spelling can get past it (see "Limits"). Other agents (Codex, Gemini, Copilot and others) do not read that file. All agents must follow this guide. When you change one, change the other in the same PR.
 
-The reasons behind these rules (secrets, guards in the code, the public repository, the pipeline) are in `.ai-run/guides/security.md`. This guide lists only the refusals.
+The reasons behind these rules (secrets, guards in the code, the public repository, the pipeline) are in `.ai-run/guides/development/security-patterns.md`. This guide lists only the refusals.
 
 ## Files never read or changed
 
@@ -35,15 +35,15 @@ An agent does not run these on its own. The user runs them, or confirms each one
 
 | Action | Why |
 |---|---|
-| `codemie-cdk deploy`, `codemie-cdk destroy`, in any spelling: `npx`, `npm exec`, a path to the binary, `node .../cli/index.js`, `tsx src/cli/index.ts` | They create, change or delete resources on a live platform with the credentials in `.env`. `destroy --force` and `deploy --prune` delete with no prompt (`.ai-run/guides/security.md`, "Destructive operations") |
-| `codemie-iac ... apply`, in any spelling: `poetry run`, a path to the binary, `python -m codemie_iac.cli` | Creates or updates entities on a live platform with no prompt (`.ai-run/guides/security.md`, "Destructive operations"; `iac/codemie-iac-python/README.md`, "Plan and apply against the platform") |
+| `codemie-cdk deploy`, `codemie-cdk destroy`, in any spelling: `npx`, `npm exec`, a path to the binary, `node .../cli/index.js`, `tsx src/cli/index.ts` | They create, change or delete resources on a live platform with the credentials in `.env`. `destroy --force` and `deploy --prune` delete with no prompt (`.ai-run/guides/development/security-patterns.md`, "Destructive operations") |
+| `codemie-iac ... apply`, in any spelling: `poetry run`, a path to the binary, `python -m codemie_iac.cli` | Creates or updates entities on a live platform with no prompt (`.ai-run/guides/development/security-patterns.md`, "Destructive operations"; `iac/codemie-iac-python/README.md`, "Plan and apply against the platform") |
 | `npm publish`, `poetry publish`, `twine upload`, `gh release create`, `gh workflow run` | A release is public and cannot be taken back. Releases go through `.github/workflows/publish.yml` and `.github/workflows/publish-python.yml` (`docs/RELEASING.md`) |
 | `terraform apply`, `destroy`, `import`, `force-unlock`, `state rm`, `state push` | Changes real infrastructure or its state. The repository has no Terraform; the rule stops an agent from changing outside infrastructure from here |
 | `kubectl apply`, `kubectl delete`, `helm install`, `helm upgrade`, `helm uninstall` | Changes a live cluster |
 | `aws ... delete*`, `az ... delete*` | Deletes cloud resources |
 | `git push --force-with-lease` | Allowed only on your own feature branch, after the user confirms. Never on `main` |
 | `rm -r`, `rm -R`, `rm --recursive` (any flag order) | Recursive delete with no undo. Delete named files instead |
-| An edit of `.github/workflows/**` or `.gitleaks.toml` | Changes the pipeline or the secrets scan for every contributor (`.ai-run/guides/security.md`) |
+| An edit of `.github/workflows/**` or `.gitleaks.toml` | Changes the pipeline or the secrets scan for every contributor (`.ai-run/guides/development/security-patterns.md`) |
 
 The read-only platform commands (`codemie-cdk backup`, `import`, `preview`; `codemie-iac plan`) are not on the deny list, but they still connect to a live platform. Run them only when the user asks and names the environment (`AGENTS.md`, "Live platform").
 
