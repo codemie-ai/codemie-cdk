@@ -141,19 +141,25 @@ def test_remote_incomplete_names_environment_keys(tmp_path, body, missing):
     assert "environment." in str(info.value)
 
 
-@pytest.mark.parametrize(
-    ("half", "missing"),
-    [
-        ("  client_id: c\n  client_secret: ''\n", "environment.client_secret"),
-        ("  client_secret: s\n", "environment.client_id"),
-    ],
-)
-def test_half_client_pair_is_not_replaced_by_password_grant(tmp_path, half, missing):
+def test_client_id_without_secret_names_the_client_for_password_grant(tmp_path):
     cfg = _cfg(
         tmp_path,
-        f"  codemie_api_url: {REMOTE}\n{KEYCLOAK}{half}  username: u\n  password: p\n",
+        f"  codemie_api_url: {REMOTE}\n{KEYCLOAK}  client_id: c\n"
+        "  username: u\n  password: p\n",
     )
-    with pytest.raises(ConfigError, match=missing):
+    target = TargetConfig.resolve(None, cfg, {})
+    kwargs = _client_kwargs(target)
+    assert target._login.kind == "password"
+    assert kwargs["auth_client_id"] == "c" and "auth_client_secret" not in kwargs
+
+
+def test_client_secret_without_id_is_not_replaced_by_password_grant(tmp_path):
+    cfg = _cfg(
+        tmp_path,
+        f"  codemie_api_url: {REMOTE}\n{KEYCLOAK}  client_secret: s\n"
+        "  username: u\n  password: p\n",
+    )
+    with pytest.raises(ConfigError, match="environment.client_id"):
         TargetConfig.resolve(None, cfg, {})
 
 

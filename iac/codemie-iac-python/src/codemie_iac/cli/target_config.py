@@ -166,13 +166,16 @@ def _remote_plan(settings: EnvironmentSection) -> LoginPlan:
     missing = _missing(settings, ("auth_server_url", "auth_realm_name"))
     client = _pair_args(settings, _CLIENT_PAIR)
     user = _pair_args(settings, _USER_PAIR)
-    if not client and _has_any(settings, _CLIENT_PAIR):
-        missing += _missing(settings, tuple(key for key, _ in _CLIENT_PAIR))
-    elif not client and not user:
-        missing.append(
-            "environment.client_id and environment.client_secret "
-            "(or environment.username and environment.password)"
-        )
+    if settings.client_secret and not settings.client_id:
+        missing.append("environment.client_id")
+    if not user and not client:
+        if _has_any(settings, _CLIENT_PAIR):
+            missing += _missing(settings, tuple(key for key, _ in _CLIENT_PAIR))
+        else:
+            missing.append(
+                "environment.client_id and environment.client_secret "
+                "(or environment.username and environment.password)"
+            )
     if missing:
         raise ConfigError("A remote login is incomplete; missing " + ", ".join(missing))
     args = {
@@ -180,10 +183,15 @@ def _remote_plan(settings: EnvironmentSection) -> LoginPlan:
         "auth_server_url": settings.auth_server_url,
         "auth_realm_name": settings.auth_realm_name,
     }
-    # The SDK prefers username/password when given both pairs: pass only the winner.
     if client:
         return LoginPlan("client_credentials", {**args, **client})
-    return LoginPlan("password", {**args, **user})
+    # A password grant may name its own client: pass client_id when set.
+    extra = {
+        arg: getattr(settings, key)
+        for key, arg in _CLIENT_PAIR
+        if getattr(settings, key)
+    }
+    return LoginPlan("password", {**args, **extra, **user})
 
 
 def _login_plan(settings: EnvironmentSection) -> LoginPlan:

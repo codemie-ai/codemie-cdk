@@ -732,7 +732,9 @@ with `username` and `password`. Both are required; no Keycloak settings are
 needed.
 
 **Remote login.** Any other URL needs `auth_server_url`, `auth_realm_name` and
-either `client_id` + `client_secret` or `username` + `password`. Client
+either `client_id` + `client_secret` or `username` + `password`. A
+`username` + `password` login may also set `client_id` alone, for servers whose
+Keycloak client takes a password grant. Client
 credentials are the production path: use one service account per environment
 and keep its secret in a masked CI variable, referenced by name (for example
 `client_secret: ${CODEMIE_CLIENT_SECRET}`). When both pairs are set, client
