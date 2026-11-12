@@ -11,7 +11,7 @@ The reasons behind these rules (secrets, guards in the code, the public reposito
 | Path | Rule | Why |
 |---|---|---|
 | `.env`, `.env.local`, `.env.*.local`, `.env.prod*` (any folder) | No read, no edit | They hold the platform URL and client secret or password. `iac/codemie-iac-nodejs/.env.template` has placeholders only and stays readable |
-| `backups/**` | No read, no edit | `codemie backup` writes platform data, including sensitive values, there (`iac/codemie-iac-nodejs/.gitignore`) |
+| `backups/**` | No read, no edit | `codemie-cdk backup` writes platform data, including sensitive values, there (`iac/codemie-iac-nodejs/.gitignore`) |
 | `*.tfvars`, `*.tfstate*` | No read, no edit | The repository has no Terraform. If such a file shows up, it can hold secrets in plain text |
 | `*.pem`, `*.key`, `*.p12`, `*.pfx` | No read, no edit | Private keys and certificates |
 | `.npmrc` (any folder), `~/.npmrc`, `~/.pypirc` | No read; no edit of a repository copy | They can hold registry publish tokens. Releases use OIDC, not a stored token (`docs/RELEASING.md`) |
@@ -36,14 +36,14 @@ An agent does not run these. The user runs them, after checking the target envir
 
 | Action | Why |
 |---|---|
-| `codemie deploy`, `codemie destroy` (also through `npx codemie`, `npx @codemieai/cdk` or `node .../cli/index.js`) | They create, change or delete resources on a live platform with the credentials in `.env`. `destroy --force` and `deploy --prune` delete with no prompt (`.ai-run/guides/security.md`, "Destructive operations") |
+| `codemie-cdk deploy`, `codemie-cdk destroy` (also through `npx codemie-cdk`, `npx @codemieai/cdk` or `node .../cli/index.js`) | They create, change or delete resources on a live platform with the credentials in `.env`. `destroy --force` and `deploy --prune` delete with no prompt (`.ai-run/guides/security.md`, "Destructive operations") |
 | `codemie-iac ... apply` (also through `poetry run` or `python -m codemie_iac.cli`) | Creates or updates entities on a live platform with no prompt (`.ai-run/guides/security.md`, "Destructive operations"; `iac/codemie-iac-python/README.md`, "Plan and apply against the platform") |
 | `npm publish`, `poetry publish`, `twine upload`, `gh release create`, `gh workflow run` | A release is public and cannot be taken back. Releases go through `.github/workflows/publish.yml` and `.github/workflows/publish-python.yml` (`docs/RELEASING.md`) |
 | `terraform apply`, `destroy`, `import`, `force-unlock`, `state rm`, `state push` | Changes real infrastructure or its state. The repository has no Terraform; the rule stops an agent from changing outside infrastructure from here |
 | `kubectl apply`, `kubectl delete`, `helm install`, `helm upgrade`, `helm uninstall` | Changes a live cluster |
 | `aws ... delete*`, `az ... delete*` | Deletes cloud resources |
 
-The read-only platform commands (`codemie backup`, `import`, `preview`; `codemie-iac plan`) are not on the deny list, but they still connect to a live platform. Run them only when the user asks and names the environment (`AGENTS.md`, "Live platform").
+The read-only platform commands (`codemie-cdk backup`, `import`, `preview`; `codemie-iac plan`) are not on the deny list, but they still connect to a live platform. Run them only when the user asks and names the environment (`AGENTS.md`, "Live platform").
 
 ## Limits
 

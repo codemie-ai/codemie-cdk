@@ -41,7 +41,7 @@ Python package (`codemie-iac-python`):
 
 - **Location**: none detected
 - **Tool**: none detected
-- **Run command**: n/a. The commands that connect to a platform (`codemie deploy`, `destroy`, `backup`, `import`, `preview`; `codemie-iac plan`, `apply`) are not run in CI and are not a verification step for agents (`.ai-run/guides/quality-gates.md`, `.ai-run/guides/safety-no-go.md`).
+- **Run command**: n/a. The commands that connect to a platform (`codemie-cdk deploy`, `destroy`, `backup`, `import`, `preview`; `codemie-iac plan`, `apply`) are not run in CI and are not a verification step for agents (`.ai-run/guides/quality-gates.md`, `.ai-run/guides/safety-no-go.md`).
 
 ## Coverage Targets
 
