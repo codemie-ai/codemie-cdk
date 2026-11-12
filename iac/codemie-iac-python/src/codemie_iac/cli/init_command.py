@@ -52,14 +52,24 @@ def _create(path: Path, text: str) -> None:
             handle.write(text)
     except FileExistsError:
         raise ConfigError(f"{path} already exists; use --force to replace it") from None
+    except OSError:
+        raise ConfigError(f"Cannot write {path}") from None
 
 
 def _replace(path: Path, text: str) -> None:
-    descriptor, temp_name = tempfile.mkstemp(dir=path.parent, prefix=".codemie-init-")
+    try:
+        descriptor, temp_name = tempfile.mkstemp(
+            dir=path.parent, prefix=".codemie-init-"
+        )
+    except OSError:
+        raise ConfigError(f"Cannot write {path}") from None
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
             handle.write(text)
         os.replace(temp_name, path)
+    except OSError:
+        Path(temp_name).unlink(missing_ok=True)
+        raise ConfigError(f"Cannot write {path}") from None
     except BaseException:
         Path(temp_name).unlink(missing_ok=True)
         raise

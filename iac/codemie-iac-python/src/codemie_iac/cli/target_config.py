@@ -138,6 +138,10 @@ def _pair_args(
     return values if all(values.values()) else {}
 
 
+def _has_any(settings: EnvironmentSection, pair: tuple[tuple[str, str], ...]) -> bool:
+    return any(getattr(settings, key) for key, _ in pair)
+
+
 def _missing(settings: EnvironmentSection, keys: tuple[str, ...]) -> list[str]:
     return [f"environment.{key}" for key in keys if not getattr(settings, key)]
 
@@ -162,7 +166,9 @@ def _remote_plan(settings: EnvironmentSection) -> LoginPlan:
     missing = _missing(settings, ("auth_server_url", "auth_realm_name"))
     client = _pair_args(settings, _CLIENT_PAIR)
     user = _pair_args(settings, _USER_PAIR)
-    if not client and not user:
+    if not client and _has_any(settings, _CLIENT_PAIR):
+        missing += _missing(settings, tuple(key for key, _ in _CLIENT_PAIR))
+    elif not client and not user:
         missing.append(
             "environment.client_id and environment.client_secret "
             "(or environment.username and environment.password)"

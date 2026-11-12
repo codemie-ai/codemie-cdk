@@ -60,6 +60,13 @@ def test_second_run_exits_4_and_keeps_file(tmp_path, monkeypatch, capsys):
     assert "--force" in capsys.readouterr().out
 
 
+def test_write_failure_exits_4(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    missing_dir = str(tmp_path / "nope" / "codemie.yaml")
+    assert main(["-c", missing_dir, "init"]) == 4
+    assert main(["-c", missing_dir, "init", "--force"]) == 4
+
+
 def test_force_replaces_file(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     target = tmp_path / "codemie.yaml"

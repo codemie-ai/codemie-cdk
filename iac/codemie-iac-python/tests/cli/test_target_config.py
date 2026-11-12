@@ -141,6 +141,22 @@ def test_remote_incomplete_names_environment_keys(tmp_path, body, missing):
     assert "environment." in str(info.value)
 
 
+@pytest.mark.parametrize(
+    ("half", "missing"),
+    [
+        ("  client_id: c\n  client_secret: ''\n", "environment.client_secret"),
+        ("  client_secret: s\n", "environment.client_id"),
+    ],
+)
+def test_half_client_pair_is_not_replaced_by_password_grant(tmp_path, half, missing):
+    cfg = _cfg(
+        tmp_path,
+        f"  codemie_api_url: {REMOTE}\n{KEYCLOAK}{half}  username: u\n  password: p\n",
+    )
+    with pytest.raises(ConfigError, match=missing):
+        TargetConfig.resolve(None, cfg, {})
+
+
 def test_empty_value_counts_as_missing(tmp_path):
     cfg = _cfg(
         tmp_path,
