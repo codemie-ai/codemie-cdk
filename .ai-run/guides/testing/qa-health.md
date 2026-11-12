@@ -9,9 +9,9 @@ Figures come from a local run on a clean checkout of `main` on 2026-11-09: `npx 
 
 | Module / area | Coverage | Notes |
 |---|---|---|
-| Node.js, all of `src/` (measured files) | 88.4% lines, 80.0% branches, 93.4% functions | `src/cli/**` and test files are excluded (`iac/codemie-iac-nodejs/jest.config.ts:11`) |
+| Node.js, all of `src/` (measured files) | 88.4% lines, 80.0% branches, 93.4% functions | `src/cli/**` and test files are excluded (`collectCoverageFrom` in `iac/codemie-iac-nodejs/jest.config.ts`) |
 | Node.js `src/cli/index.ts` | not measured | Command wiring only; behaviour is tested through the command modules |
-| Node.js `src/deploy.ts` | 84.6% lines, 73.9% branches | Largest module; guards are tested (`src/deploy.test.ts:2860`) |
+| Node.js `src/deploy.ts` | 84.6% lines, 73.9% branches | Largest module; guards are tested (`deploy --replace-skill-group` in `src/deploy.test.ts`) |
 | Node.js `src/lib/**` | mostly above 89% lines | Lower files are listed below |
 | Python `src/codemie_iac/**` | 98% statements (2401 statements, 41 missed) | Branch coverage not measured |
 | Python `src/codemie_iac/cli/__main__.py` | 0% | Five-line entry point; `cli/main.py` is at 100% |
@@ -33,9 +33,9 @@ Modules with low coverage that carry logic:
 ## Known Test Debt
 
 - No end-to-end or contract test against a real CodeMie platform. A change in platform API behaviour shows up only in a manual run (`.ai-run/guides/development.md`, "Testing").
-- The Node.js coverage threshold (50%, `jest.config.ts:28-35`) is not enforced: CI runs `npm test`, not `npm run test:ci` (`.github/workflows/ci.yml:95`).
+- The Node.js coverage threshold (50%, `coverageThreshold` in `jest.config.ts`) is not enforced: CI runs `npm test`, not `npm run test:ci` (job `test`, step "Unit tests" in `.github/workflows/ci.yml`).
 - The Python package has no coverage threshold and no type checker in CI (`.ai-run/guides/quality-gates.md`).
-- `npm test` uses `--passWithNoTests` (`iac/codemie-iac-nodejs/package.json:46`), so a run with zero tests is green.
+- `npm test` uses `--passWithNoTests` (the `test` script in `iac/codemie-iac-nodejs/package.json`), so a run with zero tests is green.
 - The Node.js package has no lockfile. Every CI run resolves dependencies fresh; the weekly `.github/workflows/drift.yml` job checks the newest `codemie-sdk` in range.
 - `@swc/jest` does not type-check tests; only `npx tsc --noEmit` catches type errors in test files.
 
