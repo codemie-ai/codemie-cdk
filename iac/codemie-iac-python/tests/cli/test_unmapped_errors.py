@@ -123,6 +123,8 @@ def test_apply_client_generic_error_is_apply_failed(tmp_path, as_json):
 
 class _BadTarget:
     project = "demo"
+    environment: dict = {}
+    warnings: tuple = ()
 
     def build_client(self):
         raise RuntimeError(f"sdk exploded {SECRET}")
@@ -142,6 +144,8 @@ def test_build_client_failure_is_config_error(monkeypatch, capsys, as_json):
 def test_runner_generic_failure_is_apply_failed(monkeypatch, capsys, as_json):
     class _Target:
         project = "demo"
+        environment: dict = {}
+        warnings: tuple = ()
 
         def build_client(self):
             return object()

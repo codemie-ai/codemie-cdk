@@ -47,9 +47,10 @@ def _run_apply(args: argparse.Namespace, **context: Any) -> ExitStatus:
 
 
 # name -> (help, argument registrar, runner); extend to add commands.
-_COMMANDS: dict[str, tuple[str, Callable, Callable]] = {
-    "plan": ("Show the diff against a live entity", _add_plan, _run_plan),
-    "apply": ("Apply documents to the platform", _add_apply, _run_apply),
+#: name -> (help text, argument registrar, runner, needs_target)
+_COMMANDS: dict[str, tuple[str, Callable, Callable, bool]] = {
+    "plan": ("Show the diff against a live entity", _add_plan, _run_plan, True),
+    "apply": ("Apply documents to the platform", _add_apply, _run_apply, True),
 }
 
 
@@ -59,7 +60,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-c", "--config", default=None, help="codemie.yaml path")
     parser.add_argument("--env-file", default=None, help=".env path")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name, (help_text, register, _) in _COMMANDS.items():
+    for name, (help_text, register, _, _) in _COMMANDS.items():
         sub = subparsers.add_parser(name, help=help_text)
         register(sub)
         sub.add_argument("--json", action="store_true", help="JSON output")
@@ -88,23 +89,44 @@ def _check_usage(args: argparse.Namespace) -> None:
         raise ConfigError("--id cannot be combined with a directory")
 
 
+def _print_warnings(warnings: Sequence[str]) -> None:
+    for text in dict.fromkeys(warnings):
+        sys.stderr.write(f"warning: {text}\n")
+
+
+def _connect(args: argparse.Namespace) -> tuple[TargetConfig, Any]:
+    """Resolve the target and build the client; warnings are printed first."""
+    try:
+        target = TargetConfig.resolve(args.project, args.config, env_file=args.env_file)
+    except Exception as exc:  # noqa: BLE001 - rendered by type name only
+        _print_warnings(getattr(exc, "warnings", ()))
+        raise
+    _print_warnings(target.warnings)
+    return target, target.build_client()
+
+
+def _context(args: argparse.Namespace, needs_target: bool) -> dict[str, Any]:
+    context: dict[str, Any] = {"json_output": args.json, "out": sys.stdout}
+    if not needs_target:
+        return {**context, "config_path": args.config}
+    target, client = _connect(args)
+    return {
+        **context,
+        "project": target.project,
+        "environ": target.environment,
+        "client": client,
+    }
+
+
 def _dispatch(args: argparse.Namespace) -> ExitStatus:
+    _, _, runner, needs_target = _COMMANDS[args.command]
     try:
         _check_usage(args)
-        target = TargetConfig.resolve(args.project, args.config, env_file=args.env_file)
-        client = target.build_client()
+        context = _context(args, needs_target)
     except Exception as exc:  # noqa: BLE001 - rendered by type name only
         return _fail(exc, args, ExitStatus.CONFIG_ERROR)
-    runner = _COMMANDS[args.command][2]
     try:
-        return runner(
-            args,
-            json_output=args.json,
-            project=target.project,
-            environ=target.environment,
-            client=client,
-            out=sys.stdout,
-        )
+        return runner(args, **context)
     except Exception as exc:  # noqa: BLE001 - rendered by type name only
         return _fail(exc, args, ExitStatus.APPLY_FAILED)
 

@@ -195,7 +195,7 @@ def test_cli_passes_env_file_to_resolve(monkeypatch):
     monkeypatch.setitem(
         main_module._COMMANDS,
         "plan",
-        ("h", main_module._add_plan, lambda a, **k: ExitStatus.SUCCESS),
+        ("h", main_module._add_plan, lambda a, **k: ExitStatus.SUCCESS, True),
     )
     main(["--env-file", "x.env", "plan", "f.yaml", "--id", "x"])
     assert seen["env_file"] == "x.env"
