@@ -22,6 +22,7 @@ from typing import Any, Callable, Optional, Sequence
 from .commands.apply import apply_command
 from .commands.plan import plan_command
 from .exit_status import ExitStatus
+from .init_command import init_command
 from .render import render_error
 from .target_config import ConfigError, TargetConfig
 
@@ -38,6 +39,14 @@ def _add_apply(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--id", dest="entity_id", default=None, help="entity id")
 
 
+def _add_init(sub: argparse.ArgumentParser) -> None:
+    sub.add_argument("--force", action="store_true", help="overwrite an existing file")
+
+
+def _run_init(args: argparse.Namespace, **context: Any) -> ExitStatus:
+    return ExitStatus(init_command(args.force, **context))
+
+
 def _run_plan(args: argparse.Namespace, **context: Any) -> ExitStatus:
     return plan_command(args.file, args.entity_id, **context)
 
@@ -51,6 +60,7 @@ def _run_apply(args: argparse.Namespace, **context: Any) -> ExitStatus:
 _COMMANDS: dict[str, tuple[str, Callable, Callable, bool]] = {
     "plan": ("Show the diff against a live entity", _add_plan, _run_plan, True),
     "apply": ("Apply documents to the platform", _add_apply, _run_apply, True),
+    "init": ("Write a codemie.yaml template", _add_init, _run_init, False),
 }
 
 
@@ -127,6 +137,8 @@ def _dispatch(args: argparse.Namespace) -> ExitStatus:
         return _fail(exc, args, ExitStatus.CONFIG_ERROR)
     try:
         return runner(args, **context)
+    except ConfigError as exc:
+        return _fail(exc, args, ExitStatus.CONFIG_ERROR)
     except Exception as exc:  # noqa: BLE001 - rendered by type name only
         return _fail(exc, args, ExitStatus.APPLY_FAILED)
 
