@@ -8,6 +8,10 @@ venv/
 
 # Environment files
 .env
+.env.*
+*.env
+!.env.template
+!.env.example
 
 # Editors and OS files
 .vscode/

@@ -2,7 +2,7 @@
 
 This repository is a public client tool. It has no server, routes, database or session layer. The risks are secret leaks, destructive platform operations and the supply chain.
 
-The list of files, commands and actions an agent must refuse is in `.ai-run/guides/safety-no-go.md`. `.claude/settings.json` enforces it for Claude Code.
+The list of files, commands and actions an agent must refuse is in `.ai-run/guides/safety-no-go.md`. `.claude/settings.json` blocks the usual spellings for Claude Code. It is a guard, not a security boundary.
 
 ## Authentication
 
