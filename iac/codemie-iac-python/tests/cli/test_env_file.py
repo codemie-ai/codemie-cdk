@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for ``.env`` loading (merged into the resolve environment)."""
+"""Tests for ``.env`` loading (feeds ``${NAME}`` and ``env:NAME`` only)."""
 
 import json
 import os
@@ -28,16 +28,21 @@ from codemie_iac.cli.target_config import ConfigError, TargetConfig
 __all__: list[str] = []
 
 SECRET = "s3cr3t-value-xyz"
-BASE = {
-    "CODEMIE_API_URL": "https://api.real",
-    "CODEMIE_AUTH_URL": "https://auth.real",
-    "CODEMIE_REALM": "realm-real",
-}
+YAML = (
+    "project:\n  name: ${PROJ:-}\nenvironment:\n"
+    "  codemie_api_url: ${API:-http://localhost:8080}\n"
+    "  username: ${USER_NAME:-u}\n  password: ${PW:-p}\n"
+)
 
 
 def _dotenv(path, text):
     path.write_text(text, encoding="utf-8")
     return str(path)
+
+
+def _yaml(tmp_path, monkeypatch, text=YAML):
+    (tmp_path / "codemie.yaml").write_text(text, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
 
 
 def _kwargs(target):
@@ -47,163 +52,127 @@ def _kwargs(target):
 
 
 def test_default_dotenv_in_cwd_is_picked_up(tmp_path, monkeypatch):
-    _dotenv(tmp_path / ".env", "CODEMIE_PROJECT=from-dotenv\n")
-    monkeypatch.chdir(tmp_path)
-    target = TargetConfig.resolve(None, None, BASE)
-    assert target.project == "from-dotenv"
+    _yaml(tmp_path, monkeypatch)
+    _dotenv(tmp_path / ".env", "PROJ=from-dotenv\n")
+    assert TargetConfig.resolve(None, None, {}).project == "from-dotenv"
 
 
 def test_env_file_override_replaces_default(tmp_path, monkeypatch):
-    _dotenv(tmp_path / ".env", "CODEMIE_PROJECT=default-one\n")
-    other = _dotenv(tmp_path / "other.env", "CODEMIE_PROJECT=other-one\n")
-    monkeypatch.chdir(tmp_path)
-    target = TargetConfig.resolve(None, None, BASE, env_file=other)
+    _yaml(tmp_path, monkeypatch)
+    _dotenv(tmp_path / ".env", "PROJ=default-one\n")
+    other = _dotenv(tmp_path / "other.env", "PROJ=other-one\n")
+    target = TargetConfig.resolve(None, None, {}, env_file=other)
     assert target.project == "other-one"
 
 
 def test_explicit_missing_file_is_config_error_naming_path(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+    _yaml(tmp_path, monkeypatch)
     missing = str(tmp_path / "nope.env")
     with pytest.raises(ConfigError) as info:
-        TargetConfig.resolve("p", None, BASE, env_file=missing)
+        TargetConfig.resolve("p", None, {}, env_file=missing)
     assert missing in str(info.value)
     assert exit_status_for(info.value) == ExitStatus.CONFIG_ERROR
 
 
 def test_missing_default_dotenv_is_ignored(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    assert TargetConfig.resolve("p", None, BASE).project == "p"
+    _yaml(tmp_path, monkeypatch)
+    assert TargetConfig.resolve("p", None, {}).project == "p"
 
 
 def test_real_env_beats_dotenv(tmp_path, monkeypatch):
-    _dotenv(
-        tmp_path / ".env",
-        "CODEMIE_API_URL=https://api.dotenv\nCODEMIE_REALM=realm-dotenv\n",
-    )
-    monkeypatch.chdir(tmp_path)
-    kwargs = _kwargs(TargetConfig.resolve("p", None, BASE))
-    assert kwargs["codemie_api_domain"] == "https://api.real"
-    assert kwargs["auth_realm_name"] == "realm-real"
+    _yaml(tmp_path, monkeypatch)
+    _dotenv(tmp_path / ".env", "API=http://127.0.0.1:1\nPROJ=dotenv\n")
+    env = {"API": "http://localhost:2", "PROJ": "real"}
+    target = TargetConfig.resolve(None, None, env)
+    assert target.project == "real"
+    assert _kwargs(target)["codemie_api_domain"] == "http://localhost:2"
 
 
 def test_dotenv_fills_unset_variables(tmp_path, monkeypatch):
-    _dotenv(tmp_path / ".env", "CODEMIE_REALM=realm-dotenv\n")
-    monkeypatch.chdir(tmp_path)
-    env = {k: v for k, v in BASE.items() if k != "CODEMIE_REALM"}
-    kwargs = _kwargs(TargetConfig.resolve("p", None, env))
-    assert kwargs["auth_realm_name"] == "realm-dotenv"
-    assert kwargs["codemie_api_domain"] == "https://api.real"
+    _yaml(tmp_path, monkeypatch)
+    _dotenv(tmp_path / ".env", "USER_NAME=from-dotenv\n")
+    kwargs = _kwargs(TargetConfig.resolve("p", None, {"PW": "real-pw"}))
+    assert kwargs["username"] == "from-dotenv"
+    assert kwargs["password"] == "real-pw"
 
 
 def test_resolve_does_not_mutate_given_mapping_or_os_environ(tmp_path, monkeypatch):
-    _dotenv(tmp_path / ".env", "CODEMIE_PROJECT=x\nCODEMIE_ZZZ_TEST=1\n")
-    monkeypatch.chdir(tmp_path)
+    _yaml(tmp_path, monkeypatch)
+    _dotenv(tmp_path / ".env", "PROJ=x\nCODEMIE_ZZZ_TEST=1\n")
     monkeypatch.delenv("CODEMIE_ZZZ_TEST", raising=False)
-    env = dict(BASE)
+    env = {"OTHER": "1"}
     TargetConfig.resolve(None, None, env)
-    assert env == BASE
+    assert env == {"OTHER": "1"}
     assert "CODEMIE_ZZZ_TEST" not in os.environ
 
 
-def test_dotenv_value_feeds_yaml_reference(tmp_path, monkeypatch):
-    _dotenv(tmp_path / ".env", "CODEMIE_API_URL=https://api.dotenv\n")
-    (tmp_path / "codemie.yaml").write_text(
-        "project:\n  name: p\nenvironment:\n"
-        "  codemie_api_url: ${CODEMIE_API_URL:-}\n"
-        "  auth_server_url: https://auth.file\n  auth_realm_name: r\n",
-        encoding="utf-8",
+def test_dotenv_fixed_names_do_not_configure_the_connection(tmp_path, monkeypatch):
+    _yaml(tmp_path, monkeypatch)
+    _dotenv(
+        tmp_path / ".env",
+        "CODEMIE_API_URL=https://api.dotenv\nCODEMIE_PROJECT=ignored\n",
     )
-    monkeypatch.chdir(tmp_path)
-    kwargs = _kwargs(TargetConfig.resolve(None, None, {}))
-    assert kwargs["codemie_api_domain"] == "https://api.dotenv"
-
-
-def test_dotenv_beats_codemie_yaml_environment(tmp_path, monkeypatch):
-    _dotenv(tmp_path / ".env", "CODEMIE_API_URL=https://api.dotenv\n")
-    (tmp_path / "codemie.yaml").write_text(
-        "project:\n  name: p\nenvironment:\n  codemie_api_url: https://api.file\n"
-        "  auth_server_url: a\n  auth_realm_name: r\n",
-        encoding="utf-8",
-    )
-    monkeypatch.chdir(tmp_path)
-    kwargs = _kwargs(TargetConfig.resolve(None, None, {}))
-    assert kwargs["codemie_api_domain"] == "https://api.dotenv"
-
-
-def test_jwt_mode_with_token_only_from_dotenv(tmp_path, monkeypatch):
-    _dotenv(tmp_path / ".env", f"CODEMIE_JWT_TOKEN={SECRET}\n")
-    monkeypatch.chdir(tmp_path)
-    target = TargetConfig.resolve("p", None, {"CODEMIE_API_URL": "https://api.real"})
-    with patch("codemie_iac.cli.target_config.TokenClient") as token:
-        target.build_client()
-    assert token.call_args.args[:2] == ("https://api.real", SECRET)
+    with pytest.raises(ConfigError, match="Missing project"):
+        TargetConfig.resolve(None, None, {})
+    kwargs = _kwargs(TargetConfig.resolve("p", None, {}))
+    assert kwargs["codemie_api_domain"] == "http://localhost:8080"
 
 
 @pytest.mark.parametrize(
     ("line", "expected"),
     [
-        ("CODEMIE_PROJECT=plain", "plain"),
-        ("export CODEMIE_PROJECT=exported", "exported"),
-        ("export   CODEMIE_PROJECT = spaced ", "spaced"),
-        ('CODEMIE_PROJECT="double quoted"', "double quoted"),
-        ("CODEMIE_PROJECT='single quoted'", "single quoted"),
-        ("CODEMIE_PROJECT=\"mismatch'", "\"mismatch'"),
-        ("CODEMIE_PROJECT=a=b", "a=b"),
-        ("CODEMIE_PROJECT=${OTHER}", "${OTHER}"),
+        ("PROJ=plain", "plain"),
+        ("export PROJ=exported", "exported"),
+        ("export   PROJ = spaced ", "spaced"),
+        ('PROJ="double quoted"', "double quoted"),
+        ("PROJ='single quoted'", "single quoted"),
+        ("PROJ=\"mismatch'", "\"mismatch'"),
+        ("PROJ=a=b", "a=b"),
     ],
 )
 def test_parsing_values(tmp_path, monkeypatch, line, expected):
+    _yaml(tmp_path, monkeypatch)
     _dotenv(tmp_path / ".env", f"# comment\n\n{line}\n")
-    monkeypatch.chdir(tmp_path)
-    assert TargetConfig.resolve(None, None, BASE).project == expected
+    assert TargetConfig.resolve(None, None, {}).project == expected
 
 
 def test_parsing_skips_comments_and_bad_keys(tmp_path, monkeypatch):
+    _yaml(tmp_path, monkeypatch)
     _dotenv(
         tmp_path / ".env",
-        "# CODEMIE_PROJECT=commented\n"
-        "1BAD=x\nBAD-KEY=x\nno equals sign\n=novalue\n"
-        "CODEMIE_PROJECT=good\n",
+        "# PROJ=commented\n1BAD=x\nBAD-KEY=x\nno equals sign\n=novalue\nPROJ=good\n",
     )
-    monkeypatch.chdir(tmp_path)
-    assert TargetConfig.resolve(None, None, BASE).project == "good"
+    assert TargetConfig.resolve(None, None, {}).project == "good"
 
 
 def test_empty_value_counts_as_not_set(tmp_path, monkeypatch):
-    _dotenv(tmp_path / ".env", "CODEMIE_PROJECT=\n")
-    monkeypatch.chdir(tmp_path)
+    _yaml(tmp_path, monkeypatch)
+    _dotenv(tmp_path / ".env", "PROJ=\n")
     with pytest.raises(ConfigError, match="Missing project"):
-        TargetConfig.resolve(None, None, BASE)
+        TargetConfig.resolve(None, None, {})
 
 
 def test_non_utf8_file_is_config_error_without_content(tmp_path, monkeypatch):
-    path = tmp_path / ".env"
-    path.write_bytes(b"CODEMIE_PROJECT=" + SECRET.encode() + b"\xff\xfe\n")
-    monkeypatch.chdir(tmp_path)
+    _yaml(tmp_path, monkeypatch)
+    (tmp_path / ".env").write_bytes(b"PROJ=" + SECRET.encode() + b"\xff\xfe\n")
     with pytest.raises(ConfigError) as info:
-        TargetConfig.resolve(None, None, BASE)
+        TargetConfig.resolve(None, None, {})
     assert "./.env" in str(info.value)
     assert SECRET not in str(info.value)
 
 
 def test_unreadable_default_path_is_config_error(tmp_path, monkeypatch):
+    _yaml(tmp_path, monkeypatch)
     (tmp_path / ".env").mkdir()  # a directory, not a file
-    monkeypatch.chdir(tmp_path)
     with pytest.raises(ConfigError):
-        TargetConfig.resolve("p", None, BASE)
+        TargetConfig.resolve("p", None, {})
 
 
 def test_secrets_never_in_error_text(tmp_path, monkeypatch):
-    _dotenv(
-        tmp_path / ".env",
-        f"CODEMIE_CLIENT_SECRET={SECRET}\nCODEMIE_PASSWORD={SECRET}\n",
-    )
-    monkeypatch.chdir(tmp_path)
+    _yaml(tmp_path, monkeypatch)
+    _dotenv(tmp_path / ".env", f"PW={SECRET}\n")
     with pytest.raises(ConfigError) as info:
         TargetConfig.resolve(None, None, {})
-    assert SECRET not in str(info.value)
-    with pytest.raises(ConfigError) as info:
-        TargetConfig.resolve("p", None, {})
     assert SECRET not in str(info.value)
 
 
@@ -212,6 +181,8 @@ def test_cli_passes_env_file_to_resolve(monkeypatch):
 
     class _T:
         project = "demo"
+        environment: dict = {}
+        warnings: tuple = ()
 
         def build_client(self):
             return "client"
@@ -224,7 +195,7 @@ def test_cli_passes_env_file_to_resolve(monkeypatch):
     monkeypatch.setitem(
         main_module._COMMANDS,
         "plan",
-        ("h", main_module._add_plan, lambda a, **k: ExitStatus.SUCCESS),
+        ("h", main_module._add_plan, lambda a, **k: ExitStatus.SUCCESS, True),
     )
     main(["--env-file", "x.env", "plan", "f.yaml", "--id", "x"])
     assert seen["env_file"] == "x.env"
@@ -242,10 +213,10 @@ def test_cli_missing_env_file_exits_4_without_secrets(tmp_path, monkeypatch, cap
 
 
 def test_dotenv_value_reaches_credential_resolution(tmp_path, monkeypatch):
+    _yaml(tmp_path, monkeypatch)
     _dotenv(tmp_path / ".env", f"CRED_VAR={SECRET}\n")
-    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("CRED_VAR", raising=False)
-    target = TargetConfig.resolve("p", None, BASE)
+    target = TargetConfig.resolve("p", None, {})
     assert target.environment["CRED_VAR"] == SECRET
     assert "CRED_VAR" not in os.environ
     assert SECRET not in repr(target)
@@ -253,8 +224,8 @@ def test_dotenv_value_reaches_credential_resolution(tmp_path, monkeypatch):
 
 def test_real_env_beats_dotenv_for_credentials(tmp_path, monkeypatch):
     _dotenv(tmp_path / ".env", "CRED_VAR=from-dotenv\n")
-    monkeypatch.chdir(tmp_path)
-    target = TargetConfig.resolve("p", None, {**BASE, "CRED_VAR": "from-shell"})
+    _yaml(tmp_path, monkeypatch)
+    target = TargetConfig.resolve("p", None, {"CRED_VAR": "from-shell"})
     assert target.environment["CRED_VAR"] == "from-shell"
 
 

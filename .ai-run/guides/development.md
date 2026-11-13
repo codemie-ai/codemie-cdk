@@ -138,8 +138,6 @@ Do not use these statements as instructions. Check the code.
 | Scripts `validate`, `preview`, `deploy`, `destroy`, `backup` (Node.js README) | No scripts with these names. The commands exist in the CLI (`src/cli/index.ts`) |
 | A `compile` script and prompt compilation (Node.js README) | No such script and no compile module in `src/` |
 | A `type-check` script (Node.js README) | The script is `types:check` |
-| "Depends on the local `codemie-sdk-python`" (Python README) | The dependency is a pinned registry version |
-| "Needs `codemie-sdk-python` 0.3.0 or newer" (Python README, "Install") | `pyproject.toml` and `poetry.lock` pin `0.1.707`. The two statements do not agree; check with a maintainer before you change the pin |
 | GitLab CI examples (Node.js README) | They describe a consumer pipeline. This repository uses GitHub Actions |
 
 ## Don't do

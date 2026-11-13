@@ -14,46 +14,50 @@
 
 """Target project and platform connection settings for the plan/apply CLI.
 
-Precedence per key: command-line flag > environment variable (the real
-environment, then a ``.env`` file that only fills in unset names) > the
-``environment:`` mapping of ``codemie.yaml`` > the legacy ``api:`` mapping.
-String values in the file may reference ``${NAME}`` / ``${NAME:-default}``.
+Every connection setting comes from ``codemie.yaml`` (``project.name`` and the
+``environment:`` mapping), except ``--project``, which overrides the project.
+String values in the file may reference ``${NAME}`` / ``${NAME:-default}``; the
+real environment and a ``.env`` file only feed those references and the
+``env:NAME`` credentials of the documents.
 """
 
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Mapping, Optional
 
 import yaml
 from codemie_sdk import CodeMieClient
 
+from .config_model import ConfigError, EnvironmentSection, load_config
 from .env_file import read_env_file
-from .token_client import TokenClient
 
-__all__ = ["ConfigError", "TargetConfig", "DEFAULT_CONFIG_PATH"]
+__all__ = ["ConfigError", "TargetConfig", "DEFAULT_CONFIG_PATH", "is_local_url"]
 
 DEFAULT_CONFIG_PATH = "./codemie.yaml"
 DEFAULT_ENV_FILE = "./.env"
 
-#: client argument -> (env var, ``environment:`` key, legacy ``api:`` key)
-_API_URL = ("codemie_api_domain", "CODEMIE_API_URL", "codemie_api_url", "url")
-_KEYCLOAK = {
-    "auth_server_url": ("CODEMIE_AUTH_URL", "auth_server_url", "auth_url"),
-    "auth_realm_name": ("CODEMIE_REALM", "auth_realm_name", "realm"),
-}
-_OPTIONAL = {
-    "auth_client_id": ("CODEMIE_CLIENT_ID", "client_id", None),
-    "auth_client_secret": ("CODEMIE_CLIENT_SECRET", "client_secret", None),
-    "username": ("CODEMIE_USERNAME", "username", None),
-    "password": ("CODEMIE_PASSWORD", "password", None),
-}
-_JWT = ("CODEMIE_JWT_TOKEN", "jwt_token", None)
 _VAR = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
+_LOCAL_MARKERS = ("localhost", "127.0.0.1", "0.0.0.0", "192.168")
+_CLIENT_PAIR = (
+    ("client_id", "auth_client_id"),
+    ("client_secret", "auth_client_secret"),
+)
+_USER_PAIR = (("username", "username"), ("password", "password"))
 
 
-class ConfigError(Exception):
-    """Missing or invalid target configuration; the message never holds secrets."""
+def is_local_url(url: str) -> bool:
+    """Same rule as the SDK: the lower-cased URL contains a local marker."""
+    lowered = url.lower()
+    return any(marker in lowered for marker in _LOCAL_MARKERS)
+
+
+@dataclass(frozen=True)
+class LoginPlan:
+    """How to log in: ``local``, ``client_credentials`` or ``password``."""
+
+    kind: str
+    client_args: Mapping[str, str] = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -61,10 +65,10 @@ class TargetConfig:
     """Resolved target project and client connection settings."""
 
     project: str
-    _client_args: Mapping[str, Optional[str]] = field(repr=False)
-    _jwt_token: Optional[str] = field(default=None, repr=False)
+    _login: LoginPlan = field(repr=False)
     _verify_ssl: bool = True
     _environ: Mapping[str, str] = field(default_factory=dict, repr=False)
+    warnings: tuple[str, ...] = ()
 
     @classmethod
     def resolve(
@@ -74,23 +78,47 @@ class TargetConfig:
         environ: Optional[Mapping[str, str]] = None,
         env_file: Optional[str] = None,
     ) -> "TargetConfig":
-        """Merge flag, environment, ``.env`` and ``codemie.yaml`` values."""
+        """Read ``codemie.yaml``; ``--project`` overrides ``project.name``."""
         real = os.environ if environ is None else environ
         env = {**_load_env_file(env_file), **real}
-        document = _expand(_load_document(config_path), env)
-        project = project_flag or env.get("CODEMIE_PROJECT") or _file_project(document)
+        path = config_path or DEFAULT_CONFIG_PATH
+        warnings: list[str] = []
+        try:
+            return cls._build(project_flag, path, env, warnings)
+        except ConfigError as exc:
+            if not exc.warnings:
+                exc.warnings = tuple(warnings)
+            raise
+
+    @classmethod
+    def _build(
+        cls,
+        project_flag: Optional[str],
+        path: str,
+        env: Mapping[str, str],
+        warnings: list[str],
+    ) -> "TargetConfig":
+        document = _expand(_load_document(path), env)
+        config, found = load_config(document)
+        warnings.extend(found)
+        project = project_flag or config.project.name
         if not project:
             raise ConfigError(
-                "Missing project: use --project, CODEMIE_PROJECT or project.name "
-                "in codemie.yaml"
+                f"Missing project: use --project or set project.name in {path}"
             )
-        jwt = _lookup(env, document, _JWT)
+        settings = config.environment
+        if not settings.codemie_api_url:
+            raise ConfigError(f"Missing environment.codemie_api_url in {path}")
+        if not settings.verify_ssl:
+            warnings.append(
+                "environment.verify_ssl is false: TLS certificates are not verified"
+            )
         return cls(
             project=project,
-            _client_args=_client_args(env, document, bool(jwt)),
-            _jwt_token=jwt,
-            _verify_ssl=_verify_ssl(env),
+            _login=_login_plan(settings),
+            _verify_ssl=settings.verify_ssl,
             _environ=env,
+            warnings=tuple(warnings),
         )
 
     @property
@@ -98,28 +126,85 @@ class TargetConfig:
         """Real environment merged over ``.env``; what ``env:NAME`` credentials read."""
         return self._environ
 
-    def build_client(self) -> Union[CodeMieClient, TokenClient]:
-        """Construct the platform client (token client when a JWT is set)."""
-        if self._jwt_token:
-            return TokenClient(
-                str(self._client_args["codemie_api_domain"]),
-                self._jwt_token,
-                verify_ssl=self._verify_ssl,
+    def build_client(self) -> CodeMieClient:
+        """Construct the platform client from the stored login plan."""
+        return CodeMieClient(**self._login.client_args, verify_ssl=self._verify_ssl)
+
+
+def _pair_args(
+    settings: EnvironmentSection, pair: tuple[tuple[str, str], ...]
+) -> dict[str, str]:
+    values = {arg: getattr(settings, key) for key, arg in pair}
+    return values if all(values.values()) else {}
+
+
+def _has_any(settings: EnvironmentSection, pair: tuple[tuple[str, str], ...]) -> bool:
+    return any(getattr(settings, key) for key, _ in pair)
+
+
+def _missing(settings: EnvironmentSection, keys: tuple[str, ...]) -> list[str]:
+    return [f"environment.{key}" for key in keys if not getattr(settings, key)]
+
+
+def _local_plan(settings: EnvironmentSection) -> LoginPlan:
+    missing = _missing(settings, ("username", "password"))
+    if missing:
+        raise ConfigError(
+            "A local codemie_api_url needs username and password; missing "
+            + ", ".join(missing)
+        )
+    # The SDK constructor requires the two Keycloak arguments even for a local URL.
+    args = {
+        "codemie_api_domain": settings.codemie_api_url,
+        "auth_server_url": "",
+        "auth_realm_name": "",
+    }
+    return LoginPlan("local", {**args, **_pair_args(settings, _USER_PAIR)})
+
+
+def _remote_plan(settings: EnvironmentSection) -> LoginPlan:
+    """Keycloak login: client_id + client_secret, or client_id + username + password."""
+    missing = _missing(settings, ("auth_server_url", "auth_realm_name", "client_id"))
+    uses_secret = bool(settings.client_secret)
+    if not uses_secret:
+        if _has_any(settings, _USER_PAIR):
+            missing += _missing(settings, ("username", "password"))
+        else:
+            missing.append(
+                "environment.client_secret "
+                "(or environment.username and environment.password)"
             )
-        return CodeMieClient(**self._client_args, verify_ssl=self._verify_ssl)
+    if missing:
+        raise ConfigError("A remote login is incomplete; missing " + ", ".join(missing))
+    if uses_secret and _has_any(settings, _USER_PAIR):
+        raise ConfigError(
+            "A remote login is ambiguous: set environment.client_secret or "
+            "environment.username and environment.password, not both"
+        )
+    args = {
+        "codemie_api_domain": settings.codemie_api_url,
+        "auth_server_url": settings.auth_server_url,
+        "auth_realm_name": settings.auth_realm_name,
+        "auth_client_id": settings.client_id,
+    }
+    if uses_secret:
+        return LoginPlan(
+            "client_credentials", {**args, "auth_client_secret": settings.client_secret}
+        )
+    return LoginPlan("password", {**args, **_pair_args(settings, _USER_PAIR)})
 
 
-def _load_document(config_path: Optional[str]) -> dict[str, Any]:
-    """Parse the config file; only a missing *default* file is tolerated."""
-    explicit = config_path is not None
-    path = config_path if explicit else DEFAULT_CONFIG_PATH
+def _login_plan(settings: EnvironmentSection) -> LoginPlan:
+    if is_local_url(settings.codemie_api_url):
+        return _local_plan(settings)
+    return _remote_plan(settings)
+
+
+def _load_document(path: str) -> dict[str, Any]:
+    """Parse the config file; a missing file is a config error."""
     try:
         with open(path, encoding="utf-8") as handle:
             data = yaml.safe_load(handle)
-    except FileNotFoundError:
-        if explicit:
-            raise ConfigError(f"Config file {path} cannot be read") from None
-        return {}
     except (OSError, UnicodeDecodeError):
         raise ConfigError(f"Config file {path} cannot be read") from None
     except yaml.YAMLError:
@@ -143,16 +228,6 @@ def _load_env_file(env_file: Optional[str]) -> dict[str, str]:
         return {}
     except (OSError, UnicodeDecodeError):
         raise ConfigError(f"Env file {path} cannot be read") from None
-
-
-def _mapping(document: Mapping[str, Any], key: str) -> Mapping[str, Any]:
-    value = document.get(key)
-    return value if isinstance(value, dict) else {}
-
-
-def _file_project(document: Mapping[str, Any]) -> Optional[str]:
-    name = _mapping(document, "project").get("name")
-    return str(name) if name else None
 
 
 def _substitute(match: "re.Match[str]", env: Mapping[str, str]) -> str:
@@ -181,50 +256,3 @@ def _expand(value: Any, env: Mapping[str, str]) -> Any:
     if isinstance(value, list):
         return [_expand(item, env) for item in value]
     return value
-
-
-def _verify_ssl(env: Mapping[str, str]) -> bool:
-    return (env.get("CODEMIE_VERIFY_SSL") or "true").strip().lower() != "false"
-
-
-def _lookup(
-    env: Mapping[str, str],
-    document: Mapping[str, Any],
-    spec: tuple[str, str, Optional[str]],
-) -> Optional[str]:
-    """Environment variable > ``environment:`` value > legacy ``api:`` value."""
-    env_name, env_key, api_key = spec
-    value = env.get(env_name) or _mapping(document, "environment").get(env_key)
-    if not value and api_key:
-        value = _mapping(document, "api").get(api_key)
-    return str(value) if value else None
-
-
-def _require(
-    env: Mapping[str, str],
-    document: Mapping[str, Any],
-    spec: tuple[str, str, Optional[str]],
-) -> str:
-    value = _lookup(env, document, spec)
-    if not value:
-        env_name, env_key, _ = spec
-        raise ConfigError(
-            f"Missing {env_name} (or environment.{env_key} in codemie.yaml)"
-        )
-    return value
-
-
-def _client_args(
-    env: Mapping[str, str], document: Mapping[str, Any], jwt_mode: bool
-) -> dict[str, Optional[str]]:
-    arg, env_name, env_key, api_key = _API_URL
-    args: dict[str, Optional[str]] = {
-        arg: _require(env, document, (env_name, env_key, api_key))
-    }
-    if jwt_mode:
-        return args
-    for arg, spec in _KEYCLOAK.items():
-        args[arg] = _require(env, document, spec)
-    for arg, spec in _OPTIONAL.items():
-        args[arg] = _lookup(env, document, spec)
-    return args
