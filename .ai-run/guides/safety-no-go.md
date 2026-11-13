@@ -24,10 +24,10 @@ The reasons behind these rules (secrets, guards in the code, the public reposito
 
 | Command | Why |
 |---|---|
-| `git push --force`, `git push -f`, `git push <remote> +<branch>` (also with `git -C <dir>`) | Rewrites shared history and can delete other people's commits. `--force-with-lease` on your own feature branch is in "Actions that always need a person" |
+| `git push --force`, `git push -f` (also with `git -C <dir>`) | Rewrites shared history and can delete other people's commits. `--force-with-lease` and a `+<branch>` refspec on your own feature branch are in "Actions that always need a person" |
 | `git reset --hard` (flag in any position, also with `git -C <dir>`) | Discards uncommitted work with no undo |
 | `git clean` (any form, the dry run `-n` too) | Deletes untracked files with no undo; with `-x` also ignored files such as `.env` and `backups/` |
-| `git commit ... --no-verify`, any command with `--no-verify` | Skips the hooks that guard the commit |
+| `git commit ... --no-verify`, `git commit -n`, any command with `--no-verify` or `core.hooksPath` | Skips the hooks that guard the commit. A commit message that names `--no-verify` is refused too; write around it |
 
 ## Actions that always need a person
 
@@ -41,7 +41,7 @@ An agent does not run these on its own. The user runs them, or confirms each one
 | `terraform apply`, `destroy`, `import`, `force-unlock`, `state rm`, `state push` | Changes real infrastructure or its state. The repository has no Terraform; the rule stops an agent from changing outside infrastructure from here |
 | `kubectl apply`, `kubectl delete`, `helm install`, `helm upgrade`, `helm uninstall` | Changes a live cluster |
 | `aws ... delete*`, `az ... delete*` | Deletes cloud resources |
-| `git push --force-with-lease` | Allowed only on your own feature branch, after the user confirms. Never on `main` |
+| `git push --force-with-lease`, `git push <remote> +<branch>` | Allowed only on your own feature branch, after the user confirms. Never on `main`. Any push with a `+` in it prompts, for example a branch named `feature/c++-parser` |
 | `rm -r`, `rm -R`, `rm --recursive` (any flag order) | Recursive delete with no undo. Delete named files instead |
 | An edit of `.github/workflows/**` or `.gitleaks.toml` | Changes the pipeline or the secrets scan for every contributor (`.ai-run/guides/development/security-patterns.md`) |
 
