@@ -176,6 +176,11 @@ def _remote_plan(settings: EnvironmentSection) -> LoginPlan:
             )
     if missing:
         raise ConfigError("A remote login is incomplete; missing " + ", ".join(missing))
+    if uses_secret and _has_any(settings, _USER_PAIR):
+        raise ConfigError(
+            "A remote login is ambiguous: set environment.client_secret or "
+            "environment.username and environment.password, not both"
+        )
     args = {
         "codemie_api_domain": settings.codemie_api_url,
         "auth_server_url": settings.auth_server_url,

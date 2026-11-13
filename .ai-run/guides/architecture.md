@@ -129,7 +129,7 @@ Fetch timeouts are 30 seconds per resource type in `TIMEOUTS_MS` (`lib/constants
 | Package | Policy | Where |
 |---|---|---|
 | Node.js | Range `>=0.1.0 <1.0.0` for `codemie-sdk`, no lockfile | `iac/codemie-iac-nodejs/package.json` |
-| Python | Exact pin `codemie-sdk-python = "0.1.713"`, `poetry.lock` committed. The reason for the pin is unknown | `iac/codemie-iac-python/pyproject.toml` |
+| Python | Exact pin `codemie-sdk-python = "0.1.713"`, `poetry.lock` committed. The pin is there for `skill_ids` support and because the local-login rule test (`tests/cli/test_sdk_local_rule.py`) must be rerun on every bump | `iac/codemie-iac-python/pyproject.toml` |
 
 With the wide Node.js range, each install can get a newer SDK. CI reports the installed version (step "Report installed codemie-sdk version" in `.github/workflows/ci.yml`), and a weekly job runs all checks on the newest version in range (`.github/workflows/drift.yml`). When the SDK adds or changes a field, update `lib/converters.ts` and the checksum normalization in `lib/checksumUtils.ts`.
 

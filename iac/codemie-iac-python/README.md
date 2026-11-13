@@ -699,7 +699,8 @@ refused with `project_mismatch`.
 with one warning on stderr naming the key path (never the value). The
 `version`, `imported`, `tool_definitions`, `datasource_defaults` and
 `resources` keys of the Node.js tool and `project.description` are accepted
-and not inspected.
+and not inspected. `$import` (a modular Node.js config) is not supported: write
+the `project` and `environment` keys inline.
 
 | Key | Required | Meaning |
 |---|---|---|
@@ -741,8 +742,9 @@ needed.
   referenced by name (for example `client_secret: ${CODEMIE_CLIENT_SECRET}`).
 - `username` + `password`: a password grant for the named `client_id`.
 
-When `client_secret` is set, client credentials are used even if a username and
-password are also set. `username` and `password` without `client_id` are not
+Setting `client_secret` together with `username` or `password` is a config
+error: the SDK would log in as the user, the service account is a different
+identity, so the CLI does not pick one for you. `username` and `password` without `client_id` are not
 enough for a remote URL. Incomplete settings stop the CLI before it contacts
 the platform, and the error names the missing `environment.*` keys.
 
@@ -751,7 +753,9 @@ the legacy `api:` section and the fixed-name `CODEMIE_*` variables
 (`CODEMIE_API_URL`, `CODEMIE_PROJECT`, `CODEMIE_VERIFY_SSL` and the rest) are
 no longer read. `jwt_token` and `api:` are now unknown keys (a warning); to keep
 using a variable, reference it from `codemie.yaml` as `${NAME}`. A configuration
-error raised while a command runs now exits 4 (it used to exit 2).
+error raised while a command runs now exits 4 (it used to exit 2). A Node.js
+`codemie.yaml` that pulls `environment` in with `$import` no longer works; put
+the keys inline.
 
 **Trusted input.** `codemie.yaml` in the working directory decides which API
 URL receives the credentials expanded from your shell. Treat it like a

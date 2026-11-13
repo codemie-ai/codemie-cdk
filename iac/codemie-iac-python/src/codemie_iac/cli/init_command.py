@@ -29,7 +29,16 @@ __all__ = ["init_command", "render_template"]
 _PROJECT_VARIABLE = "CODEMIE_PROJECT"
 
 
+# Names the Node.js tool already uses for these two keys, so one .env serves both.
+_VARIABLE_NAMES = {
+    "auth_server_url": "CODEMIE_AUTH_URL",
+    "auth_realm_name": "CODEMIE_REALM",
+}
+
+
 def _variable(key: str) -> str:
+    if key in _VARIABLE_NAMES:
+        return _VARIABLE_NAMES[key]
     name = key.upper()
     return name if name.startswith("CODEMIE_") else f"CODEMIE_{name}"
 

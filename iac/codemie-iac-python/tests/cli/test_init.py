@@ -109,3 +109,19 @@ def test_unset_template_has_no_model_warnings(tmp_path, monkeypatch):
         "environment": {key: "" for key in doc["environment"]},
     }
     assert load_config(expanded)[1] == []
+
+
+def test_keycloak_variables_match_the_node_tool(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    main(["init"])
+    text = (tmp_path / "codemie.yaml").read_text()
+    assert "${CODEMIE_AUTH_URL:-}" in text and "${CODEMIE_REALM:-}" in text
+    env = {
+        "CODEMIE_PROJECT": "demo",
+        "CODEMIE_API_URL": "https://api.example.com",
+        "CODEMIE_AUTH_URL": "https://kc.example.com/auth",
+        "CODEMIE_REALM": "realm",
+        "CODEMIE_CLIENT_ID": "c",
+        "CODEMIE_CLIENT_SECRET": "s",
+    }
+    assert TargetConfig.resolve(None, None, env)._login.kind == "client_credentials"

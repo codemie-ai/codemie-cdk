@@ -131,19 +131,8 @@ def test_remote_username_password_reach_keycloak(tmp_path):
     assert kwargs["client_id"] == "c" and kwargs["client_secret"] is None
 
 
-def test_both_pairs_the_cli_sends_only_client_credentials(tmp_path):
-    _, keycloak = _build(
-        tmp_path,
-        f"  codemie_api_url: https://api.example.com\n{KEYCLOAK}"
-        "  client_id: c\n  client_secret: s\n  username: u\n  password: p\n",
-    )
-    kwargs = keycloak.call_args.kwargs
-    assert kwargs["client_id"] == "c"
-    assert kwargs["username"] is None
-
-
 def test_sdk_prefers_username_password_when_given_both_pairs():
-    """Why the CLI sends one pair: the SDK would pick the password grant."""
+    """Why the CLI rejects both pairs: the SDK would pick the password grant."""
     from codemie_sdk.auth.credentials import KeycloakCredentials
 
     class _Response:

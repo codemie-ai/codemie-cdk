@@ -117,16 +117,17 @@ def test_remote_username_password_without_client_id_is_rejected(tmp_path):
         TargetConfig.resolve(None, cfg, {})
 
 
-def test_remote_both_pairs_prefers_client_credentials(tmp_path):
+@pytest.mark.parametrize(
+    "user", ["  username: u\n  password: p\n", "  username: u\n", "  password: p\n"]
+)
+def test_remote_client_secret_with_user_keys_is_ambiguous(tmp_path, user):
     cfg = _cfg(
         tmp_path,
         f"  codemie_api_url: {REMOTE}\n{KEYCLOAK}  client_id: c\n  client_secret: s\n"
-        "  username: u\n  password: p\n",
+        + user,
     )
-    target = TargetConfig.resolve(None, cfg, {})
-    assert target._login.kind == "client_credentials"
-    kwargs = _client_kwargs(target)
-    assert "username" not in kwargs and "password" not in kwargs
+    with pytest.raises(ConfigError, match="not both"):
+        TargetConfig.resolve(None, cfg, {})
 
 
 @pytest.mark.parametrize(
