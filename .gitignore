@@ -8,6 +8,10 @@ venv/
 
 # Environment files
 .env
+.env.*
+*.env
+!.env.template
+!.env.example
 
 # Editors and OS files
 .vscode/
@@ -21,3 +25,6 @@ venv/
 .codegraph/
 .superpowers
 docs/superpowers/
+
+# Test coverage output
+.coverage
