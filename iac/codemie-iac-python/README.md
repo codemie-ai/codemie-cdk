@@ -696,7 +696,11 @@ refused with `project_mismatch`.
 **`export`** writes one live entity as a YAML document (the same format `plan`
 and `apply` read) to stdout, or to the `--out` file. `<kind>` is one of
 `assistant`, `datasource`, `integration`, `skill`, `category`, `workflow`.
-Credentials appear only as `env:` references, never as values. Output is YAML
+Credentials appear only as `env:` references, never as values. Fields tied to one live entity
+(`INSTANCE_BOUND_FIELDS` in `export.py`; today an assistant's `slug`, which is unique
+per project) are left out, so applying the file without `--id` creates a new
+entity and with `--id` updates the original. The platform derives a new
+assistant's slug from its name and adds a suffix on a clash. Output is YAML
 only; `--json` is not accepted. On any failure (HTTP error, document that
 cannot be represented) the error is printed, the exit status is 2, and
 `--out` is neither created nor overwritten.

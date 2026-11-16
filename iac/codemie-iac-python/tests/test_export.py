@@ -18,7 +18,8 @@ from pydantic import ValidationError
 
 from codemie_iac.cli.commands.export import export_command
 from codemie_iac.envelope import Document, DocumentKind
-from codemie_iac.export import export_document
+from codemie_iac.envelope import _SPEC_BY_KIND, _spec_classes
+from codemie_iac.export import INSTANCE_BOUND_FIELDS, export_document
 from tests.plan_apply.fakes import FakeClient, FakeExport
 
 CATEGORY = {
@@ -33,6 +34,37 @@ def test_returns_validated_document():
     assert export_document(client, DocumentKind.CATEGORY, "c1") == (
         Document.model_validate(CATEGORY)
     )
+
+
+def test_assistant_slug_is_dropped():
+    raw = {
+        "version": "v1",
+        "meta": {"kind": "assistant", "name": "a1"},
+        "spec": {
+            "name": "a1",
+            "description": "d",
+            "system_prompt": "p",
+            "project": "proj",
+            "llm_model_type": "gpt",
+            "slug": "a1",
+        },
+    }
+    client = FakeClient(export=FakeExport({("assistant", "x"): raw}))
+    assert export_document(client, "assistant", "x").spec.slug is None
+
+
+def test_instance_bound_fields_exist_on_their_spec():
+    # A renamed or removed spec field must fail here, not silently stop being
+    # dropped from exports.
+    for kind, fields in INSTANCE_BOUND_FIELDS.items():
+        for spec_cls in _spec_classes(_SPEC_BY_KIND[kind]):
+            assert fields <= set(spec_cls.model_fields), (kind, spec_cls)
+
+
+def test_other_kinds_keep_all_fields():
+    raw = {**CATEGORY, "spec": {**CATEGORY["spec"], "description": "kept"}}
+    client = FakeClient(export=FakeExport({("category", "c1"): raw}))
+    assert export_document(client, "category", "c1").spec.description == "kept"
 
 
 def test_http_error_propagates():
