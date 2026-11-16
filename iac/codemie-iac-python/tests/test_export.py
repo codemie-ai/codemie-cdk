@@ -16,6 +16,7 @@ import pytest
 import requests
 from pydantic import ValidationError
 
+from codemie_iac.cli.commands.export import export_command
 from codemie_iac.envelope import Document, DocumentKind
 from codemie_iac.export import export_document
 from tests.plan_apply.fakes import FakeClient, FakeExport
@@ -44,3 +45,17 @@ def test_invalid_document_raises_validation_error():
     client = FakeClient(export=FakeExport({("category", "c1"): bad}))
     with pytest.raises(ValidationError):
         export_document(client, "category", "c1")
+
+
+def test_out_file_is_utf8_with_non_ascii(tmp_path, monkeypatch):
+    import io
+    import locale
+
+    monkeypatch.setattr(locale, "getpreferredencoding", lambda *a, **k: "cp1252")
+    doc = {**CATEGORY, "spec": {**CATEGORY["spec"], "description": "Категория \u2713"}}
+    client = FakeClient(export=FakeExport({("category", "c1"): doc}))
+    target = tmp_path / "out.yaml"
+    export_command(
+        "category", "c1", str(target), project="p", client=client, out=io.StringIO()
+    )
+    assert "Категория \u2713" in target.read_text(encoding="utf-8")

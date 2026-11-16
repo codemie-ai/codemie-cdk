@@ -47,7 +47,7 @@ def export_command(
     try:
         text = to_yaml(Bundle([export_document(client, kind, entity_id)]))
         if out_path:
-            Path(out_path).write_text(text)
+            Path(out_path).write_text(text, encoding="utf-8")
         else:
             out.write(text)
     except Exception as exc:  # noqa: BLE001 - unmapped errors become APPLY_FAILED
