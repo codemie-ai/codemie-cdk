@@ -19,7 +19,9 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence
 
+from ..envelope import DocumentKind
 from .commands.apply import apply_command
+from .commands.export import export_command
 from .commands.plan import plan_command
 from .exit_status import ExitStatus
 from .init_command import init_command
@@ -39,6 +41,14 @@ def _add_apply(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--id", dest="entity_id", default=None, help="entity id")
 
 
+def _add_export(sub: argparse.ArgumentParser) -> None:
+    sub.add_argument(
+        "kind", choices=[k.value for k in DocumentKind], help="entity kind"
+    )
+    sub.add_argument("id", help="entity id")
+    sub.add_argument("--out", default=None, help="write YAML to this file")
+
+
 def _add_init(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--force", action="store_true", help="overwrite an existing file")
 
@@ -55,11 +65,16 @@ def _run_apply(args: argparse.Namespace, **context: Any) -> ExitStatus:
     return apply_command(args.path, args.entity_id, **context)
 
 
+def _run_export(args: argparse.Namespace, **context: Any) -> ExitStatus:
+    return export_command(args.kind, args.id, args.out, **context)
+
+
 # name -> (help, argument registrar, runner); extend to add commands.
 #: name -> (help text, argument registrar, runner, needs_target)
 _COMMANDS: dict[str, tuple[str, Callable, Callable, bool]] = {
     "plan": ("Show the diff against a live entity", _add_plan, _run_plan, True),
     "apply": ("Apply documents to the platform", _add_apply, _run_apply, True),
+    "export": ("Export a live entity as YAML", _add_export, _run_export, True),
     "init": ("Write a codemie.yaml template", _add_init, _run_init, False),
 }
 
@@ -73,7 +88,10 @@ def _build_parser() -> argparse.ArgumentParser:
     for name, (help_text, register, _, _) in _COMMANDS.items():
         sub = subparsers.add_parser(name, help=help_text)
         register(sub)
-        sub.add_argument("--json", action="store_true", help="JSON output")
+        if name == "export":  # YAML only
+            sub.set_defaults(json=False)
+        else:
+            sub.add_argument("--json", action="store_true", help="JSON output")
     return parser
 
 

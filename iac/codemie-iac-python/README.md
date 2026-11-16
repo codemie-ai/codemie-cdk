@@ -676,6 +676,7 @@ src/codemie_iac/
 ```
 codemie-iac [-c/--config codemie.yaml] init [--force]
 codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] plan <file> --id <id> [--json]
+codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] export <kind> <id> [--out PATH]
 codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] apply <path> [--id <id>] [--json]
 ```
 
@@ -691,6 +692,17 @@ rename them.
 The `project` of a document (`project_name` for integrations and datasources)
 is optional and defaults to the target project. A different explicit value is
 refused with `project_mismatch`.
+
+**`export`** writes one live entity as a YAML document (the same format `plan`
+and `apply` read) to stdout, or to the `--out` file. `<kind>` is one of
+`assistant`, `datasource`, `integration`, `skill`, `category`, `workflow`.
+Credentials appear only as `env:` references, never as values. Output is YAML
+only; `--json` is not accepted. On any failure (HTTP error, document that
+cannot be represented) the error is printed, the exit status is 2, and
+`--out` is neither created nor overwritten.
+
+Manual check (live platform): apply an exported file to a clean project and
+compare the entities, ignoring platform ids.
 
 ### `codemie.yaml`
 
