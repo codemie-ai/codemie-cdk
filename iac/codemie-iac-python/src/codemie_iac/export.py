@@ -17,8 +17,10 @@
 from typing import Any
 
 from .envelope import Document, DocumentKind
+from .plan_apply.errors import UnresolvedReferenceError
+from .plan_apply.lookup import LIVE_FINDERS
 
-__all__ = ["INSTANCE_BOUND_FIELDS", "export_document"]
+__all__ = ["INSTANCE_BOUND_FIELDS", "export_document", "find_entity_id"]
 
 #: Spec fields that belong to one live entity and are not part of its definition,
 #: per kind. An export leaves them out so the file can be applied as a *new*
@@ -48,3 +50,25 @@ def export_document(client: Any, kind: DocumentKind | str, entity_id: str) -> Do
     kind = DocumentKind(kind)
     raw = client.export.export(kind.value, entity_id)
     return Document.model_validate(_without_instance_fields(kind, raw))
+
+
+def find_entity_id(
+    client: Any, project: str, kind: DocumentKind | str, alias: str
+) -> str:
+    """The id of the one ``kind`` entity called ``alias`` in ``project``.
+
+    Raises ``UnresolvedReferenceError`` when none or several match; the
+    several case lists their ids so the caller can pick one with ``--id``.
+    """
+    kind = DocumentKind(kind)
+    matches = LIVE_FINDERS[kind](client, project, alias)
+    if len(matches) == 1:
+        return str(matches[0].id)
+    reason = f"no {kind.value} named {alias!r} in project {project!r}"
+    if matches:
+        ids = ", ".join(str(m.id) for m in matches)
+        reason = (
+            f"{len(matches)} {kind.value} entities named {alias!r} in project "
+            f"{project!r}; use --id with one of: {ids}"
+        )
+    raise UnresolvedReferenceError("unresolved_reference", kind.value, alias, reason)

@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from ...envelope import Bundle
-from ...export import export_document
+from ...export import export_document, find_entity_id
 from ...serializer import to_yaml
 from ..exit_status import ExitStatus, exit_status_for
 from ..render import render_error
@@ -29,22 +29,26 @@ __all__ = ["export_command"]
 
 def export_command(
     kind: str,
-    entity_id: str,
+    entity_id: str | None,
     out_path: str | None,
     *,
+    alias: str | None = None,
     project: str,
     client: Any,
     out: TextIO,
     environ: Mapping[str, str] | None = None,
     json_output: bool = False,
 ) -> ExitStatus:
-    """Write entity ``entity_id`` as YAML to ``out_path`` or to ``out``.
+    """Write entity ``entity_id`` (or the one called ``alias``) as YAML to
+    ``out_path`` or to ``out``.
 
-    Nothing is written unless the fetch, parse and serialise all succeed.
-    ``json_output``, ``project`` and ``environ`` are accepted for the shared
+    Nothing is written unless the lookup, fetch, parse and serialise all
+    succeed. ``json_output`` and ``environ`` are accepted for the shared
     command context and ignored.
     """
     try:
+        if entity_id is None:
+            entity_id = find_entity_id(client, project, kind, alias or "")
         text = to_yaml(Bundle([export_document(client, kind, entity_id)]))
         if out_path:
             Path(out_path).write_text(text, encoding="utf-8")

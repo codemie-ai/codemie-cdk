@@ -21,7 +21,9 @@ from codemie_iac.cli.exit_status import ExitStatus
 from codemie_iac.cli.main import main
 from codemie_iac.envelope import Bundle, Document
 from codemie_iac.serializer import to_yaml
-from tests.plan_apply.fakes import FakeClient, FakeExport
+from types import SimpleNamespace
+
+from tests.plan_apply.fakes import FakeCategories, FakeClient, FakeExport
 
 CATEGORY = {
     "version": "v1",
@@ -94,8 +96,52 @@ def test_credential_is_a_reference_only():
 
 
 def test_bogus_kind_is_a_usage_error():
-    assert main(["export", "bogus", "x"]) == int(ExitStatus.CONFIG_ERROR)
+    assert main(["export", "bogus", "--id", "x"]) == int(ExitStatus.CONFIG_ERROR)
 
 
 def test_json_flag_is_rejected():
-    assert main(["export", "category", "x", "--json"]) == int(ExitStatus.CONFIG_ERROR)
+    assert main(["export", "category", "--id", "x", "--json"]) == int(
+        ExitStatus.CONFIG_ERROR
+    )
+
+
+def _alias_client(*cats):
+    return FakeClient(
+        categories=FakeCategories(get_categories=list(cats)),
+        export=FakeExport({("category", "c1"): CATEGORY}),
+    )
+
+
+def _by_alias(client, alias="cat1"):
+    out = io.StringIO()
+    status = export_command(
+        "category", None, None, alias=alias, project="p", client=client, out=out
+    )
+    return status, out.getvalue()
+
+
+def test_alias_resolves_to_the_entity_id():
+    status, text = _by_alias(_alias_client(SimpleNamespace(id="c1", name="cat1")))
+    assert (status, text) == (ExitStatus.SUCCESS, EXPECTED)
+
+
+def test_unknown_alias_is_unresolved_and_names_the_problem():
+    status, text = _by_alias(_alias_client(), alias="nope")
+    assert status == ExitStatus.UNRESOLVED_INPUT
+    assert "no category named 'nope'" in text
+
+
+def test_ambiguous_alias_lists_the_ids():
+    cats = [
+        SimpleNamespace(id="c1", name="cat1"),
+        SimpleNamespace(id="c2", name="cat1"),
+    ]
+    status, text = _by_alias(_alias_client(*cats))
+    assert status == ExitStatus.UNRESOLVED_INPUT
+    assert "--id with one of: c1, c2" in text
+
+
+def test_id_or_alias_is_required_and_exclusive():
+    assert main(["export", "category"]) == int(ExitStatus.CONFIG_ERROR)
+    both = ["export", "category", "--id", "x", "--alias", "y"]
+    assert main(both) == int(ExitStatus.CONFIG_ERROR)

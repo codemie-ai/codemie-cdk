@@ -45,7 +45,9 @@ def _add_export(sub: argparse.ArgumentParser) -> None:
     sub.add_argument(
         "kind", choices=[k.value for k in DocumentKind], help="entity kind"
     )
-    sub.add_argument("id", help="entity id")
+    which = sub.add_mutually_exclusive_group(required=True)
+    which.add_argument("--id", help="entity id")
+    which.add_argument("--alias", help="entity alias or name in the target project")
     sub.add_argument("--out", default=None, help="write YAML to this file")
 
 
@@ -66,7 +68,7 @@ def _run_apply(args: argparse.Namespace, **context: Any) -> ExitStatus:
 
 
 def _run_export(args: argparse.Namespace, **context: Any) -> ExitStatus:
-    return export_command(args.kind, args.id, args.out, **context)
+    return export_command(args.kind, args.id, args.out, alias=args.alias, **context)
 
 
 # name -> (help, argument registrar, runner); extend to add commands.

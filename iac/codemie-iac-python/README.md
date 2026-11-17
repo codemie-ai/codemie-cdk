@@ -676,7 +676,7 @@ src/codemie_iac/
 ```
 codemie-iac [-c/--config codemie.yaml] init [--force]
 codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] plan <file> --id <id> [--json]
-codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] export <kind> <id> [--out PATH]
+codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] export <kind> (--id ID | --alias NAME) [--out PATH]
 codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] apply <path> [--id <id>] [--json]
 ```
 
@@ -696,6 +696,10 @@ refused with `project_mismatch`.
 **`export`** writes one live entity as a YAML document (the same format `plan`
 and `apply` read) to stdout, or to the `--out` file. `<kind>` is one of
 `assistant`, `datasource`, `integration`, `skill`, `category`, `workflow`.
+Pick the entity with exactly one of `--id` (its platform id) or `--alias` (its
+alias or name in the target project, e.g. an integration's alias). An alias that
+matches nothing, or several entities, fails with exit status 3; the several are
+listed so you can re-run with `--id`.
 Credentials appear only as `env:` references, never as values. Fields tied to one live entity
 (`INSTANCE_BOUND_FIELDS` in `export.py`; today an assistant's `slug`, which is unique
 per project) are left out, so applying the file without `--id` creates a new
