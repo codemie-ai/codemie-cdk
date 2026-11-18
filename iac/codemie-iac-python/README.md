@@ -675,12 +675,12 @@ src/codemie_iac/
 
 ```
 codemie-iac [-c/--config codemie.yaml] init [--force]
-codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] plan <file> --id <id> [--json]
-codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] export <kind> (--id ID | --alias NAME) [--out PATH]
-codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] apply <path> [--id <id>] [--json]
+codemie-iac [-c/--config codemie.yaml] [--env-file PATH] plan <file> --id <id> [--json]
+codemie-iac [-c/--config codemie.yaml] [--env-file PATH] export <kind> (--id ID | --alias NAME) [--out PATH]
+codemie-iac [-c/--config codemie.yaml] [--env-file PATH] apply <path> [--id <id>] [--json]
 ```
 
-Global flags `--project`, `-c/--config` and `--env-file` go BEFORE the
+Global flags `-c/--config` and `--env-file` go BEFORE the
 subcommand; `--json` goes after it.
 
 **`init`** writes a `codemie.yaml` template to the `-c/--config` path (default
@@ -726,7 +726,7 @@ the `project` and `environment` keys inline.
 
 | Key | Required | Meaning |
 |---|---|---|
-| `project.name` | yes, unless `--project` is given | target project |
+| `project.name` | yes | target project |
 | `environment.codemie_api_url` | yes | platform API URL |
 | `environment.username`, `environment.password` | local login; remote password grant | username and password |
 | `environment.auth_server_url`, `environment.auth_realm_name` | remote login | Keycloak URL and realm |
@@ -813,8 +813,8 @@ be applied together.
 **Single mode: one file, one document.**
 
 ```
-codemie-iac --project my-project plan examples/simple/assistant.yaml --id <id>
-codemie-iac --project my-project apply examples/simple/assistant.yaml
+codemie-iac plan examples/simple/assistant.yaml --id <id>
+codemie-iac apply examples/simple/assistant.yaml
 ```
 
 **Batch mode: a directory.** `apply <dir>` creates every `*.yaml` / `*.yml`
@@ -823,13 +823,13 @@ documents may reference each other by name (the `batch/` example:
 integration, datasource, category, assistant).
 
 ```
-codemie-iac --project my-project apply examples/batch
+codemie-iac apply examples/batch
 ```
 
 **Create:** `apply <file>` without `--id`, or `apply <dir>`.
 
 ```
-codemie-iac --project my-project apply examples/simple/skill.yaml
+codemie-iac apply examples/simple/skill.yaml
 ```
 
 **Update:** `apply <file> --id <id>` updates the existing asset with that
@@ -838,12 +838,12 @@ platform id. `plan <file> --id <id>` shows the changes without applying them
 output.
 
 ```
-codemie-iac --project my-project apply examples/simple/skill.yaml --id <id>
-codemie-iac --project my-project plan examples/simple/skill.yaml --id <id>
-codemie-iac --project my-project plan examples/simple/skill.yaml --id <id> --json
+codemie-iac apply examples/simple/skill.yaml --id <id>
+codemie-iac plan examples/simple/skill.yaml --id <id>
+codemie-iac plan examples/simple/skill.yaml --id <id> --json
 ```
 
-Global flags (`--project`, `-c`) go before the subcommand, `--json` after it.
+The global flag `-c` goes before the subcommand, `--json` after it.
 Credentials in the examples are `env:NAME` references; export those variables
 before applying. IDs inside workflows (`workflow_id`, `datasource_ids`,
 `skill_ids`) are placeholders, or names of skills and datasources that are

@@ -95,7 +95,7 @@ def test_local_setup_through_template_variables(tmp_path, monkeypatch):
         "CODEMIE_USERNAME": "u",
         "CODEMIE_PASSWORD": "p",
     }
-    target = TargetConfig.resolve(None, None, env)
+    target = TargetConfig.resolve(None, env)
     assert target.project == "demo"
     assert target.warnings == ()
 
@@ -124,4 +124,4 @@ def test_keycloak_variables_match_the_node_tool(tmp_path, monkeypatch):
         "CODEMIE_CLIENT_ID": "c",
         "CODEMIE_CLIENT_SECRET": "s",
     }
-    assert TargetConfig.resolve(None, None, env)._login.kind == "client_credentials"
+    assert TargetConfig.resolve(None, env)._login.kind == "client_credentials"

@@ -83,7 +83,6 @@ _COMMANDS: dict[str, tuple[str, Callable, Callable, bool]] = {
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="codemie-iac")
-    parser.add_argument("--project", default=None, help="target project")
     parser.add_argument("-c", "--config", default=None, help="codemie.yaml path")
     parser.add_argument("--env-file", default=None, help=".env path")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -127,7 +126,7 @@ def _print_warnings(warnings: Sequence[str]) -> None:
 def _connect(args: argparse.Namespace) -> tuple[TargetConfig, Any]:
     """Resolve the target and build the client; warnings are printed first."""
     try:
-        target = TargetConfig.resolve(args.project, args.config, env_file=args.env_file)
+        target = TargetConfig.resolve(args.config, env_file=args.env_file)
     except Exception as exc:  # noqa: BLE001 - rendered by type name only
         _print_warnings(getattr(exc, "warnings", ()))
         raise

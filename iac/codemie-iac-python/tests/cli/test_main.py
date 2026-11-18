@@ -71,7 +71,7 @@ def test_plan_dispatch(target, monkeypatch):
         return ExitStatus.CHANGES_PENDING
 
     monkeypatch.setattr(main_module, "plan_command", fake)
-    code = main(["--project", "p", "plan", "f.yaml", "--id", "x", "--json"])
+    code = main(["plan", "f.yaml", "--id", "x", "--json"])
     assert code == 1
     assert calls["file"] == Path("f.yaml")
     assert calls["entity_id"] == "x"
