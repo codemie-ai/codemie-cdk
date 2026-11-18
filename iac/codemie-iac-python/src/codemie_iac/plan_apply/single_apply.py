@@ -60,7 +60,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, computed_field
 
-from ..credentials import CredentialRef
+from ..credentials import CredentialRef, is_mask
 from ..envelope import Document, DocumentKind
 from .credentials import (
     MCP_REF_FIELDS,
@@ -125,7 +125,6 @@ _PROJECT_FIELDS = {
     DocumentKind.INTEGRATION: "project_name",
 }
 
-_MASK_LENGTHS = frozenset({8, 10})
 _NESTED_DATASOURCE_KEYS = (
     "code",
     "git_faq",
@@ -178,18 +177,12 @@ class Plan(BaseModel):
 # --- normalisation ---------------------------------------------------------
 
 
-def _is_mask(value: Any) -> bool:
-    return (
-        isinstance(value, str) and len(value) in _MASK_LENGTHS and set(value) == {"*"}
-    )
-
-
 def _has_mask(value: Any) -> bool:
     if isinstance(value, Mapping):
         return any(_has_mask(v) for v in value.values())
     if isinstance(value, list):
         return any(_has_mask(v) for v in value)
-    return _is_mask(value)
+    return is_mask(value)
 
 
 def _canon(value: Any) -> Any:
@@ -267,6 +260,15 @@ def _credential_finding(
     return CannotCompare(field=field, reason=reason)
 
 
+def _prompt_variable_finding(
+    spec: Any, resolver: EnvCredentialResolver
+) -> list[CannotCompare]:
+    refs = resolver.collect_refs(
+        SimpleNamespace(prompt_variables=getattr(spec, "prompt_variables", None))
+    )
+    return [_credential_finding("prompt_variables", refs, resolver)] if refs else []
+
+
 def _credential_findings(
     document: Document, resolver: EnvCredentialResolver
 ) -> list[CannotCompare]:
@@ -288,7 +290,7 @@ def _credential_findings(
     token = getattr(spec, "access_token", None)
     if token is not None:
         findings.append(_credential_finding("access_token", [token], resolver))
-    return findings
+    return findings + _prompt_variable_finding(spec, resolver)
 
 
 def _datasource_secret_view(spec: Any, settings: Any) -> SimpleNamespace:

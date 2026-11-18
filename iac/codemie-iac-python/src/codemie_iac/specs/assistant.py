@@ -31,6 +31,10 @@ one computed and the other not. Dropping either loses user data on
 round-trip -- the same bug class as CR-007/CR-011. Narrows every field that
 can carry or reference a secret:
 
+- ``PromptVariable.default_value`` of a variable flagged ``is_sensitive``
+  is an ``env:`` reference (derived by ``from_entity``, never read from the
+  entity), so the secret never appears in a document.
+
 - ``MCPServerConfig.auth_token`` (a raw secret string in the SDK model)
   narrows to ``CredentialRef``, so a plain string can never be embedded.
   ``from_entity`` has no natural ``credential_key`` for this one field (it
@@ -85,7 +89,15 @@ can carry or reference a secret:
 
 from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from codemie_sdk.models.assistant import (
     AssistantCreateRequest,
@@ -101,7 +113,7 @@ from codemie_sdk.models.assistant import (
     ToolPermissionsConfig,
 )
 
-from ..credentials import CredentialRef
+from ..credentials import CredentialRef, is_mask
 from .datasource import (
     _is_auth_config_secret,
     _is_env_reference,
@@ -184,16 +196,41 @@ class ContextSpec(BaseModel):
 
 
 class PromptVariableSpec(BaseModel):
-    """Copies ``codemie_sdk.models.assistant.PromptVariable`` verbatim."""
+    """Narrows ``codemie_sdk.models.assistant.PromptVariable``.
 
-    model_config = ConfigDict(extra="forbid")
+    A sensitive variable (``is_sensitive``) never carries its value: the
+    ``default_value`` is an ``env:`` credential reference, validated by
+    ``AssistantSpec``. ``is_sensitive`` is omitted from dumps when false.
+    """
+
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
     key: str
     description: str | None = None
     default_value: str
+    is_sensitive: bool = False
+
+    @model_serializer(mode="wrap")
+    def _drop_false_sensitivity(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        data = handler(self)
+        if not data.get("is_sensitive"):
+            data.pop("is_sensitive", None)
+        return data
 
     @classmethod
-    def from_entity(cls, variable: PromptVariable) -> "PromptVariableSpec":
+    def from_entity(
+        cls, variable: PromptVariable, *, assistant_name: str
+    ) -> "PromptVariableSpec":
+        if variable.is_sensitive:
+            ref = CredentialRef.from_entity(f"{assistant_name}_prompt", variable.key)
+            return cls(
+                key=variable.key,
+                description=variable.description,
+                default_value=ref.root,
+                is_sensitive=True,
+            )
         return cls(
             key=variable.key,
             description=variable.description,
@@ -424,6 +461,21 @@ class MCPServerDetailsSpec(BaseModel):
         )
 
 
+def _check_sensitive_variable(
+    assistant_name: str, variable: PromptVariableSpec
+) -> None:
+    """Raise a value-free error unless the variable holds an ``env:`` reference."""
+    value = variable.default_value
+    where = f"assistant {assistant_name!r} prompt variable {variable.key!r}"
+    if _is_env_reference(value):
+        return
+    if is_mask(value):
+        raise ValueError(f"{where}: use an env: reference instead of the mask")
+    raise ValueError(
+        f"{where}: sensitive value must be an env: reference, not a literal"
+    )
+
+
 class AssistantSpec(BaseModel):
     """Narrows ``codemie_sdk.models.assistant.AssistantCreateRequest``.
 
@@ -435,7 +487,7 @@ class AssistantSpec(BaseModel):
     tool-output token limit on round-trip.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
     name: str
     description: str
@@ -466,6 +518,13 @@ class AssistantSpec(BaseModel):
     enable_image_generation: bool | None = None
     file_attachment_enabled: bool | None = None
 
+    @model_validator(mode="after")
+    def _sensitive_prompt_variables_are_references(self) -> "AssistantSpec":
+        for variable in self.prompt_variables:
+            if variable.is_sensitive:
+                _check_sensitive_variable(self.name, variable)
+        return self
+
     @classmethod
     def from_entity(cls, request: AssistantCreateRequest) -> "AssistantSpec":
         return cls(
@@ -494,7 +553,8 @@ class AssistantSpec(BaseModel):
             skill_ids=getattr(request, "skill_ids", None),
             enabled_builtin_subagents=request.enabled_builtin_subagents,
             prompt_variables=[
-                PromptVariableSpec.from_entity(p) for p in request.prompt_variables
+                PromptVariableSpec.from_entity(p, assistant_name=request.name)
+                for p in request.prompt_variables
             ],
             skip_integration_validation=request.skip_integration_validation,
             hedging_config=request.hedging_config,
