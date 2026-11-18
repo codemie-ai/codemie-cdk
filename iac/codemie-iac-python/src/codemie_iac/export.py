@@ -18,23 +18,29 @@ from typing import Any
 
 from .envelope import Document, DocumentKind
 from .plan_apply.errors import UnresolvedReferenceError
+from .plan_apply.guards import SPEC_PROJECT_FIELDS
 from .plan_apply.lookup import LIVE_FINDERS
 
-__all__ = ["INSTANCE_BOUND_FIELDS", "export_document", "find_entity_id"]
+__all__ = ["NON_PORTABLE_FIELDS", "export_document", "find_entity_id"]
 
-#: Spec fields that belong to one live entity and are not part of its definition,
-#: per kind. An export leaves them out so the file can be applied as a *new*
-#: entity: with ``--id`` the original keeps its own value, without it the
-#: platform assigns one (an assistant's ``slug`` is derived from its name and
-#: auto-suffixed on a clash). Add a field here when the platform enforces it as
-#: unique, or otherwise ties it to one entity, and the spec still carries it.
-INSTANCE_BOUND_FIELDS: dict[DocumentKind, frozenset[str]] = {
-    DocumentKind.ASSISTANT: frozenset({"slug"}),
+#: Spec fields an export leaves out, per kind, because they are not part of the
+#: entity's definition:
+#: - the project field (``SPEC_PROJECT_FIELDS``): ``apply`` takes it from the
+#:   target project in ``codemie.yaml`` and refuses a different one;
+#: - tied to one live entity: an assistant's ``slug`` is unique per project, so
+#:   with it the file could not be applied as a *new* assistant (the platform
+#:   derives one from the name and suffixes a clash).
+#: Add a field here when it is one of these and the spec still carries it.
+NON_PORTABLE_FIELDS: dict[DocumentKind, frozenset[str]] = {
+    kind: frozenset({field}) for kind, field in SPEC_PROJECT_FIELDS.items()
 }
+NON_PORTABLE_FIELDS[DocumentKind.ASSISTANT] |= {"slug"}
 
 
-def _without_instance_fields(kind: DocumentKind, raw: dict[str, Any]) -> dict[str, Any]:
-    dropped = INSTANCE_BOUND_FIELDS.get(kind, frozenset())
+def _without_non_portable_fields(
+    kind: DocumentKind, raw: dict[str, Any]
+) -> dict[str, Any]:
+    dropped = NON_PORTABLE_FIELDS.get(kind, frozenset())
     spec = raw.get("spec")
     if not dropped or not isinstance(spec, dict):
         return raw
@@ -44,12 +50,12 @@ def _without_instance_fields(kind: DocumentKind, raw: dict[str, Any]) -> dict[st
 def export_document(client: Any, kind: DocumentKind | str, entity_id: str) -> Document:
     """Fetch entity ``entity_id`` of ``kind`` and parse it into a ``Document``.
 
-    Fields in ``INSTANCE_BOUND_FIELDS`` are dropped before parsing, so the
+    Fields in ``NON_PORTABLE_FIELDS`` are dropped before parsing, so the
     document applies as a new entity without clashing with the original.
     """
     kind = DocumentKind(kind)
     raw = client.export.export(kind.value, entity_id)
-    return Document.model_validate(_without_instance_fields(kind, raw))
+    return Document.model_validate(_without_non_portable_fields(kind, raw))
 
 
 def find_entity_id(

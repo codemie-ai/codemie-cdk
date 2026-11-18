@@ -19,7 +19,8 @@ from pydantic import ValidationError
 from codemie_iac.cli.commands.export import export_command
 from codemie_iac.envelope import Document, DocumentKind
 from codemie_iac.envelope import _SPEC_BY_KIND, _spec_classes
-from codemie_iac.export import INSTANCE_BOUND_FIELDS, export_document
+from codemie_iac.plan_apply.guards import SPEC_PROJECT_FIELDS
+from codemie_iac.export import NON_PORTABLE_FIELDS, export_document
 from tests.plan_apply.fakes import FakeClient, FakeExport
 
 CATEGORY = {
@@ -53,12 +54,50 @@ def test_assistant_slug_is_dropped():
     assert export_document(client, "assistant", "x").spec.slug is None
 
 
-def test_instance_bound_fields_exist_on_their_spec():
+def test_non_portable_fields_exist_on_their_spec():
     # A renamed or removed spec field must fail here, not silently stop being
     # dropped from exports.
-    for kind, fields in INSTANCE_BOUND_FIELDS.items():
+    for kind, fields in NON_PORTABLE_FIELDS.items():
         for spec_cls in _spec_classes(_SPEC_BY_KIND[kind]):
             assert fields <= set(spec_cls.model_fields), (kind, spec_cls)
+
+
+def test_project_field_is_dropped_for_every_kind_that_has_one():
+    assert set(SPEC_PROJECT_FIELDS) <= set(NON_PORTABLE_FIELDS)
+    for kind, field in SPEC_PROJECT_FIELDS.items():
+        assert field in NON_PORTABLE_FIELDS[kind]
+
+
+def test_integration_project_name_is_dropped():
+    raw = {
+        "version": "v1",
+        "meta": {"kind": "integration", "name": "jira"},
+        "spec": {
+            "project_name": "proj",
+            "alias": "jira",
+            "credential_type": "Jira",
+            "credential_values": [{"key": "token", "ref": "env:JIRA_TOKEN"}],
+            "setting_type": "project",
+        },
+    }
+    client = FakeClient(export=FakeExport({("integration", "i1"): raw}))
+    assert export_document(client, "integration", "i1").spec.project_name is None
+
+
+def test_assistant_project_is_dropped():
+    raw = {
+        "version": "v1",
+        "meta": {"kind": "assistant", "name": "a1"},
+        "spec": {
+            "name": "a1",
+            "description": "d",
+            "system_prompt": "p",
+            "project": "proj",
+            "llm_model_type": "gpt",
+        },
+    }
+    client = FakeClient(export=FakeExport({("assistant", "x"): raw}))
+    assert export_document(client, "assistant", "x").spec.project is None
 
 
 def test_other_kinds_keep_all_fields():

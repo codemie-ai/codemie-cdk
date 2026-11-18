@@ -700,11 +700,13 @@ Pick the entity with exactly one of `--id` (its platform id) or `--alias` (its
 alias or name in the target project, e.g. an integration's alias). An alias that
 matches nothing, or several entities, fails with exit status 3; the several are
 listed so you can re-run with `--id`.
-Credentials appear only as `env:` references, never as values. Fields tied to one live entity
-(`INSTANCE_BOUND_FIELDS` in `export.py`; today an assistant's `slug`, which is unique
-per project) are left out, so applying the file without `--id` creates a new
-entity and with `--id` updates the original. The platform derives a new
-assistant's slug from its name and adds a suffix on a clash. Output is YAML
+Credentials appear only as `env:` references, never as values. Fields that are not part of the entity's definition
+(`NON_PORTABLE_FIELDS` in `export.py`) are left out: the project field (`project`
+for assistants and skills, `project_name` for integrations and datasources;
+`apply` takes it from the target project in `codemie.yaml`) and an assistant's
+`slug` (unique per project; the platform derives a new one from the name and
+suffixes a clash). So applying the file without `--id`
+creates a new entity, and with `--id` updates the original. Output is YAML
 only; `--json` is not accepted. On any failure (HTTP error, document that
 cannot be represented) the error is printed, the exit status is 2, and
 `--out` is neither created nor overwritten.
