@@ -38,6 +38,29 @@ def test_workflow_spec_round_trips_including_icon_url():
     assert WorkflowSpec.model_validate(spec.model_dump()) == spec
 
 
+def test_workflow_assistant_effort_round_trips_through_yaml():
+    from codemie_iac.envelope import Bundle, Document, DocumentKind, DocumentMeta
+    from codemie_iac.serializer import from_yaml, to_yaml
+
+    workflow = WorkflowDefinition(
+        name="wf",
+        mode=WorkflowMode.SEQUENTIAL,
+        assistants={"a1": WorkflowAssistant(system_prompt="p", effort="low")},
+    )
+    bundle = Bundle(
+        [
+            Document(
+                version="v1",
+                meta=DocumentMeta(kind=DocumentKind.WORKFLOW, name="wf"),
+                spec=WorkflowSpec.from_entity(workflow),
+            )
+        ]
+    )
+    text = to_yaml(bundle)
+    assert "effort: low" in text
+    assert from_yaml(text) == bundle
+
+
 def test_workflow_spec_rejects_unknown_field():
     workflow = WorkflowDefinition(name="wf", mode=WorkflowMode.SEQUENTIAL)
     with pytest.raises(ValidationError, match="(?i)extra"):

@@ -70,6 +70,22 @@ def test_update_sends_revealed_secret_and_resolved_ids():
     assert request.mcp_servers[0].config.env["TOKEN"] == SECRET
 
 
+def test_update_sends_effort():
+    live = SimpleNamespace(
+        id="asst-1",
+        name="a",
+        description="d",
+        project=TARGET,
+        categories=[],
+        effort=None,
+    )
+    client = FakeClient(assistants=FakeAssistants(get=live))
+    planner = SingleEntityPlanner(client, credentials=EnvCredentialResolver(CREDS))
+    planner.apply(_assistant(effort="medium"), "asst-1", TARGET)
+    request = client.assistants.calls_to("update")[0].args[1]
+    assert request.effort == "medium"
+
+
 def test_datasource_created_after_its_integration_with_resolved_setting_id():
     datasources = FakeDatasources()
     client = FakeClient(datasources=datasources, integrations=FakeIntegrations())

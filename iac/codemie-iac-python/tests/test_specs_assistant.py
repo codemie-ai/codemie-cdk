@@ -333,3 +333,53 @@ def test_skill_ids_round_trip_through_from_entity():
         skill_ids=["s1"],
     )
     assert AssistantSpec.from_entity(request).skill_ids == ["s1"]
+
+
+def _effort_request(**extra):
+    return AssistantCreateRequest(
+        name="a",
+        description="d",
+        system_prompt="p",
+        project="proj",
+        llm_model_type="gpt",
+        **extra,
+    )
+
+
+def test_effort_is_carried_from_the_request():
+    from codemie_sdk.models.llm import EffortLevel
+
+    assert AssistantSpec.from_entity(_effort_request(effort="low")).effort == (
+        EffortLevel.LOW
+    )
+    assert AssistantSpec.from_entity(_effort_request()).effort is None
+
+
+def test_effort_round_trips_through_yaml():
+    from codemie_iac.envelope import Bundle, Document, DocumentKind, DocumentMeta
+    from codemie_iac.serializer import from_yaml, to_yaml
+
+    spec = AssistantSpec.from_entity(_effort_request(effort="high"))
+    bundle = Bundle(
+        [
+            Document(
+                version="v1",
+                meta=DocumentMeta(kind=DocumentKind.ASSISTANT, name="a"),
+                spec=spec,
+            )
+        ]
+    )
+    text = to_yaml(bundle)
+    assert "effort: high" in text
+    assert from_yaml(text) == bundle
+
+
+def test_unknown_effort_is_rejected():
+    with pytest.raises(ValidationError):
+        AssistantSpec(
+            name="a",
+            description="d",
+            system_prompt="p",
+            llm_model_type="gpt",
+            effort="extreme",
+        )

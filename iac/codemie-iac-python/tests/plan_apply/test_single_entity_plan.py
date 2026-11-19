@@ -128,6 +128,15 @@ def test_externally_changed_field_is_reported():
     ]
 
 
+def test_equal_effort_gives_empty_plan():
+    assert _plan(_assistant(effort="low"), _live_assistant(effort="low")).is_empty
+
+
+def test_changed_effort_is_reported():
+    result = _run(_assistant(effort="low"), _live_assistant(effort="high"))
+    assert [(r.field, r.live_value) for r in result] == [("effort", "high")]
+
+
 def test_only_server_managed_fields_differing_gives_empty_plan():
     live = _live_assistant(
         updated_date="2030-05-05", version_count=99, id="other", created_by=None
