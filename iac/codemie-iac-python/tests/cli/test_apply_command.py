@@ -32,7 +32,11 @@ from tests.plan_apply.test_bulk_create import (
     _integration,
     _writes,
 )
-from tests.plan_apply.test_single_entity_apply import _assistant, _live
+from tests.plan_apply.test_single_entity_apply import (
+    _assistant,
+    _category_doc,
+    _live,
+)
 
 
 def _write(path: Path, *docs) -> Path:
@@ -289,3 +293,57 @@ def test_text_and_json_output_end_with_a_newline(tmp_path):
     path = _write(tmp_path / "a.yaml", _assistant())
     assert _run(path)[1].endswith("\n")
     assert _run(path, json_output=True)[1].endswith("\n")
+
+
+def _existing_category_client():
+    from tests.plan_apply.fakes import FakeCategories
+
+    return FakeClient(
+        categories=FakeCategories(
+            get_categories=[SimpleNamespace(id="live-cat", name="cat")],
+            get_category=SimpleNamespace(id="live-cat", name="cat", description="old"),
+        )
+    )
+
+
+def test_single_existing_category_is_skipped_with_exit_zero(tmp_path):
+    client = _existing_category_client()
+    path = _write(tmp_path / "c.yaml", _category_doc("new"))
+    status, text = _run(path, client=client)
+    assert status == ExitStatus.SUCCESS
+    assert "skipped (already exists) (id: live-cat)" in text
+    assert "differs: description" in text
+    assert client.categories.calls_to("create_category") == []
+
+
+def test_single_existing_category_without_differences_has_no_differs_line(tmp_path):
+    path = _write(tmp_path / "c.yaml", _category_doc("old"))
+    status, text = _run(path, client=_existing_category_client())
+    assert status == ExitStatus.SUCCESS
+    assert "skipped (already exists)" in text and "differs" not in text
+
+
+def test_bulk_existing_category_is_skipped_with_exit_zero(tmp_path):
+    from tests.plan_apply.test_bulk_create import _category
+
+    _write(tmp_path / "c.yaml", _category("cat"))
+    status, text = _run(tmp_path, client=_existing_category_client())
+    assert status == ExitStatus.SUCCESS
+    assert "skipped (already exists) 1:" in text
+    assert "category/cat (id: live-cat)" in text
+    assert "differs" not in text
+
+
+def test_bulk_existing_category_json_has_skipped_and_status(tmp_path):
+    from tests.plan_apply.test_bulk_create import _doc as bulk_doc
+    from codemie_iac.envelope import DocumentKind
+    from codemie_iac.specs.category import CategorySpec
+
+    doc = bulk_doc(
+        DocumentKind.CATEGORY, "cat", CategorySpec(name="cat", description="x")
+    )
+    _write(tmp_path / "c.yaml", doc)
+    status, text = _run(tmp_path, client=_existing_category_client(), json_output=True)
+    data = json.loads(text)
+    assert status == 0 and data["exit_code"] == 0 and "status" in data
+    assert data["skipped"][0]["differing_fields"] == ["description"]

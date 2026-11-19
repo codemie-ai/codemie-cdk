@@ -13,10 +13,11 @@
 # limitations under the License.
 
 from .bulk_create import (
-    BulkCreator,
     BulkCreateReport,
+    BulkCreator,
     CreatedEntity,
     FailedEntity,
+    SkippedEntity,
 )
 from .credentials import EnvCredentialResolver, SecretValue
 from .errors import (
@@ -49,6 +50,7 @@ __all__ = [
     "BulkCreator",
     "CannotCompare",
     "CreatedEntity",
+    "SkippedEntity",
     "DependencyGraph",
     "Difference",
     "EnvCredentialResolver",

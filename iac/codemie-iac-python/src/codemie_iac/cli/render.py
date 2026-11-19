@@ -105,7 +105,13 @@ def _id_suffix(entity_id: str | None) -> str:
     return f" (id: {entity_id})" if entity_id else ""
 
 
+def _differs_line(fields: list[str], indent: str) -> list[str]:
+    return [f"{indent}differs: {', '.join(fields)}"] if fields else []
+
+
 def _apply_headline(result: ApplyResult) -> str:
+    if result.skipped:
+        return f"skipped (already exists){_id_suffix(result.id)}"
     if result.created:
         return f"created{_id_suffix(result.id)}"
     if not result.changed:
@@ -124,6 +130,7 @@ def render_apply_result(
     if json_output:
         return _emit_json(result.model_dump(mode="json"), status, secrets)
     lines = [_apply_headline(result)]
+    lines += _differs_line(result.differing_fields, "")
     lines += [f"warning: could not compare {f}" for f in result.uncomparable]
     return _emit_text(lines, secrets)
 
@@ -135,11 +142,16 @@ def render_bulk_report(
     status: ExitStatus,
     secrets: Iterable[str] = (),
 ) -> str:
-    """Render a bulk create report: created entities and the first failure."""
+    """Render a bulk create report: created and skipped entities and the first failure."""
     if json_output:
         return _emit_json(report.model_dump(mode="json"), status, secrets)
     lines = [f"created {len(report.created)}:"]
     lines += [f"  {c.kind.value}/{c.name}{_id_suffix(c.id)}" for c in report.created]
+    if report.skipped:
+        lines.append(f"skipped (already exists) {len(report.skipped)}:")
+        for e in report.skipped:
+            lines.append(f"  {e.kind.value}/{e.name}{_id_suffix(e.id)}")
+            lines += _differs_line(e.differing_fields, "    ")
     failed = report.failed
     if failed is not None:
         lines.append(f"failed: {failed.kind.value}/{failed.name} [{failed.error_type}]")

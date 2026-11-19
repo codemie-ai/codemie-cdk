@@ -240,6 +240,7 @@ class FakeIntegrations(FakeService):
 
 class FakeCategories(FakeService):
     DEFAULTS = {
+        "get_categories": [],
         "create_category": SimpleNamespace(id="cat-1"),
         "update_category": SimpleNamespace(id="cat-1"),
         "get_category": SimpleNamespace(id="cat-1"),

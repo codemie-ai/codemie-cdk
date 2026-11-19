@@ -33,10 +33,17 @@ from codemie_iac.plan_apply.errors import (
 from codemie_iac.plan_apply.kinds import _FIND_MAX_PAGES
 from codemie_iac.plan_apply.single_apply import ApplyResult, SingleEntityPlanner
 from codemie_iac.specs.assistant import AssistantSpec
+from codemie_iac.specs.category import CategorySpec
 from codemie_iac.specs.datasource import DatasourceSpec
 from codemie_iac.specs.integration import CredentialRefEntry, IntegrationSpec
 
-from .fakes import FakeAssistants, FakeClient, FakeDatasources, FakeIntegrations
+from .fakes import (
+    FakeAssistants,
+    FakeCategories,
+    FakeClient,
+    FakeDatasources,
+    FakeIntegrations,
+)
 
 TARGET = "proj"
 
@@ -805,3 +812,61 @@ def test_sharepoint_metadata_change_on_a_stored_oauth_datasource_still_updates()
     _planner(client).apply(doc, "ds-7", TARGET)
     request = _update_request(client)
     assert not request.full_reindex
+
+
+def _category_doc(description=None):
+    spec = CategorySpec(name="cat", description=description)
+    return _doc(DocumentKind.CATEGORY, "cat", spec)
+
+
+def _category_client(**responses):
+    return FakeClient(categories=FakeCategories(**responses))
+
+
+def _live_category_client(**responses):
+    return _category_client(
+        get_categories=[SimpleNamespace(id="live-cat", name="cat")],
+        get_category=SimpleNamespace(id="live-cat", name="cat", description="old"),
+        **responses,
+    )
+
+
+def test_apply_skips_an_existing_category_and_reports_differing_fields():
+    client = _live_category_client()
+    result = _planner(client).apply(_category_doc("new"), None, TARGET)
+
+    assert result.skipped and not result.created and not result.changed
+    assert result.id == "live-cat"
+    assert result.differing_fields == ["description"]
+    assert client.categories.calls_to("create_category") == []
+    assert client.categories.calls_to("update_category") == []
+
+
+def test_apply_skipped_category_without_differences():
+    client = _live_category_client()
+    result = _planner(client).apply(_category_doc("old"), None, TARGET)
+
+    assert result.skipped and result.differing_fields == []
+
+
+def test_apply_creates_an_unseeded_category():
+    client = _category_client(get_categories=[])
+    result = _planner(client).apply(_category_doc(), None, TARGET)
+
+    assert result.created and not result.skipped
+    assert len(client.categories.calls_to("create_category")) == 1
+
+
+def test_apply_category_listing_error_creates_nothing():
+    client = _category_client(get_categories=ApiError("down", 503))
+    with pytest.raises(PlatformRejectionError):
+        _planner(client).apply(_category_doc(), None, TARGET)
+    assert client.categories.calls_to("create_category") == []
+
+
+def test_apply_category_duplicate_rejection_on_create_is_a_platform_rejection():
+    client = _category_client(
+        get_categories=[], create_category=ApiError("duplicate", 409)
+    )
+    with pytest.raises(PlatformRejectionError):
+        _planner(client).apply(_category_doc(), None, TARGET)
