@@ -100,6 +100,7 @@ from codemie_sdk.models.assistant import (
     ToolKitDetails,
     ToolPermissionsConfig,
 )
+from codemie_sdk.models.llm import EffortLevel
 
 from ..credentials import CredentialRef
 from .datasource import (
@@ -453,6 +454,7 @@ class AssistantSpec(BaseModel):
     slug: str | None = None
     temperature: float | None = None
     top_p: float | None = None
+    effort: EffortLevel | None = None
     tools_tokens_size_limit: int | None = None
     mcp_servers: list[MCPServerDetailsSpec] = Field(default_factory=list)
     assistant_ids: list[str] = Field(default_factory=list)
@@ -485,6 +487,7 @@ class AssistantSpec(BaseModel):
             slug=request.slug,
             temperature=request.temperature,
             top_p=request.top_p,
+            effort=request.effort,
             tools_tokens_size_limit=request.tools_tokens_size_limit,
             mcp_servers=[
                 MCPServerDetailsSpec.from_entity(s, assistant_name=request.name)
