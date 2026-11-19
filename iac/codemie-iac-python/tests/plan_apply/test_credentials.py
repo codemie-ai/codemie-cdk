@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from types import SimpleNamespace
+
 import pytest
 from pydantic import BaseModel
 
@@ -32,6 +34,7 @@ from codemie_iac.specs.assistant import (
     AssistantSpec,
     MCPServerConfigSpec,
     MCPServerDetailsSpec,
+    PromptVariableSpec,
 )
 from codemie_iac.specs.integration import CredentialRefEntry, IntegrationSpec
 
@@ -314,3 +317,50 @@ def test_with_provider_secret_lookup_leaves_the_original_unchanged_and_shares_re
         base.collect_refs(_provider(region=SECRET).spec)
     derived.resolve(CredentialRef("env:A"))
     assert base.revealed_values() == frozenset({"v"})
+
+
+def _assistant_spec(*variables):
+    return AssistantSpec(
+        name="bot",
+        description="d",
+        system_prompt="p",
+        project="proj",
+        llm_model_type="gpt",
+        prompt_variables=list(variables),
+    )
+
+
+def test_collect_refs_includes_sensitive_prompt_variable_only():
+    spec = _assistant_spec(
+        PromptVariableSpec(
+            key="a", default_value="env:BOT_PROMPT_A", is_sensitive=True
+        ),
+        PromptVariableSpec(key="b", default_value="env:PLAIN"),
+    )
+    refs = EnvCredentialResolver().collect_refs(spec)
+    assert [r.root for r in refs] == ["env:BOT_PROMPT_A"]
+
+
+def test_unresolvable_sensitive_prompt_variable_names_ref_only():
+    from codemie_iac.plan_apply.bulk_create import check_credentials
+
+    spec = _assistant_spec(
+        PromptVariableSpec(key="a", default_value="env:BOT_PROMPT_A", is_sensitive=True)
+    )
+    doc = Document(
+        version="v1",
+        meta=DocumentMeta(kind=DocumentKind.ASSISTANT, name="bot"),
+        spec=spec,
+    )
+    ctx = SimpleNamespace(credentials=EnvCredentialResolver({}))
+    with pytest.raises(UnresolvableCredentialError) as ei:
+        check_credentials([doc], ctx)
+    assert "env:BOT_PROMPT_A" in ei.value.reason
+
+
+def test_sensitive_variable_with_unnameable_key_error_names_assistant_and_key():
+    from codemie_sdk.models.assistant import PromptVariable
+
+    variable = PromptVariable(key="ключ", default_value="x", is_sensitive=True)
+    with pytest.raises(ValueError, match=r"ключ.*Bot.*rename"):
+        PromptVariableSpec.from_entity(variable, assistant_name="Bot")

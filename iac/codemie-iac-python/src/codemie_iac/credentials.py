@@ -39,6 +39,15 @@ _KNOWN_SOURCES = frozenset({"env"})
 _SEEN_REFS_LOCK = threading.Lock()
 _SEEN_REFS: dict[str, tuple[str, str]] = {}
 
+_MASK_LENGTHS = frozenset({8, 10})
+
+
+def is_mask(value: object) -> bool:
+    """True for the all-asterisk placeholder the platform returns for secrets."""
+    return (
+        isinstance(value, str) and len(value) in _MASK_LENGTHS and set(value) == {"*"}
+    )
+
 
 class CredentialRef(RootModel[str]):
     @model_validator(mode="after")
