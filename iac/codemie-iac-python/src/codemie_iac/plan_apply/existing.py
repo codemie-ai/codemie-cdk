@@ -56,7 +56,8 @@ def existing_category(
         rejection = None
     if rejection is not None:
         raise rejection
-    if found is None:
+    if found is None or live is None:
+        # live is None when the entity vanished between list and get.
         return None
     findings = diff(document, live, policy_for(document), ctx.credentials, ctx)
     return found.id, [f.field for f in findings if isinstance(f, Difference)]

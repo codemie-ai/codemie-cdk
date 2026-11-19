@@ -79,6 +79,11 @@ def test_unknown_name_returns_none():
     assert existing_category(_ctx(client), _category()) is None
 
 
+def test_entity_vanishing_between_list_and_get_returns_none():
+    client = _client(get_categories=[_item()], get_category=None)
+    assert existing_category(_ctx(client), _category()) is None
+
+
 def test_non_category_kind_returns_none():
     skill = Document(
         version="v1",
