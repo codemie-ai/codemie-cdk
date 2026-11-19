@@ -356,3 +356,11 @@ def test_unresolvable_sensitive_prompt_variable_names_ref_only():
     with pytest.raises(UnresolvableCredentialError) as ei:
         check_credentials([doc], ctx)
     assert "env:BOT_PROMPT_A" in ei.value.reason
+
+
+def test_sensitive_variable_with_unnameable_key_error_names_assistant_and_key():
+    from codemie_sdk.models.assistant import PromptVariable
+
+    variable = PromptVariable(key="ключ", default_value="x", is_sensitive=True)
+    with pytest.raises(ValueError, match=r"ключ.*Bot.*rename"):
+        PromptVariableSpec.from_entity(variable, assistant_name="Bot")

@@ -224,7 +224,17 @@ class PromptVariableSpec(BaseModel):
         cls, variable: PromptVariable, *, assistant_name: str
     ) -> "PromptVariableSpec":
         if variable.is_sensitive:
-            ref = CredentialRef.from_entity(f"{assistant_name}_prompt", variable.key)
+            try:
+                ref = CredentialRef.from_entity(
+                    f"{assistant_name}_prompt", variable.key
+                )
+            except ValueError as exc:
+                raise ValueError(
+                    f"Cannot derive a credential reference for sensitive prompt "
+                    f"variable {variable.key!r} of assistant {assistant_name!r}; "
+                    "rename the variable or assistant to include ASCII letters "
+                    f"or digits ({exc})"
+                ) from exc
             return cls(
                 key=variable.key,
                 description=variable.description,
