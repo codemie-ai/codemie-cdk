@@ -674,3 +674,12 @@ def test_skipped_category_lists_differing_field_names_only():
     assert report.skipped[0].differing_fields == ["description"]
     assert "brand new text" not in report.model_dump_json()
     assert client.categories.calls_to("update_category") == []
+
+
+def test_two_categories_of_one_name_are_rejected_before_any_call():
+    client = FakeClient(categories=FakeCategories(get_categories=[]))
+    with pytest.raises(ApplyError, match="cat") as exc:
+        BulkCreator(client).create_all([_category("cat"), _category("cat")], TARGET)
+
+    assert exc.value.error_type == "duplicate_document"
+    assert client.categories.calls == []
