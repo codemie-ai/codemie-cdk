@@ -641,7 +641,10 @@ def test_unseeded_category_is_created_as_before():
     assert [e.name for e in report.created] == ["cat"]
 
 
-def test_category_create_rejection_still_fails_the_run():
+def test_duplicate_rejection_after_a_missed_check_fails_and_is_not_retried():
+    # The category appears between the lookup and the create (a concurrent
+    # apply). The rejection is a failure with the platform's reason: the tool
+    # neither looks the category up again nor skips it.
     client = FakeClient(
         categories=FakeCategories(
             get_categories=[], create_category=ApiError("duplicate", 409)
@@ -651,6 +654,8 @@ def test_category_create_rejection_still_fails_the_run():
 
     assert report.failed is not None and report.failed.name == "cat"
     assert report.skipped == []
+    assert len(client.categories.calls_to("get_categories")) == 1
+    assert len(client.categories.calls_to("create_category")) == 1
 
 
 def test_category_listing_failure_fails_the_run_without_creating():
