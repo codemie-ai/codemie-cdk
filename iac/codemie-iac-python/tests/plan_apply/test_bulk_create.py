@@ -609,3 +609,68 @@ def test_sharepoint_oauth_without_a_token_fails_the_create_naming_the_field():
     assert report.failed.error_type == "invalid_body"
     assert "access_token" in report.failed.reason
     assert client.datasources.calls_to("create") == []
+
+
+def _existing_cat_client(assistants=None, **cat_responses):
+    cats = FakeCategories(
+        get_categories=[SimpleNamespace(id="live-cat", name="cat")],
+        get_category=SimpleNamespace(id="live-cat", name="cat", description=None),
+        **cat_responses,
+    )
+    return FakeClient(assistants=assistants or IdAssistants(), categories=cats)
+
+
+def test_existing_category_is_skipped_and_its_id_used_by_the_assistant():
+    client = _existing_cat_client()
+    docs = [_assistant("main", categories=["cat"]), _category("cat")]
+    report = BulkCreator(client).create_all(docs, TARGET)
+
+    assert report.failed is None
+    assert [e.name for e in report.created] == ["main"]
+    assert [(e.name, e.id) for e in report.skipped] == [("cat", "live-cat")]
+    assert client.categories.calls_to("create_category") == []
+    assert client.categories.calls_to("update_category") == []
+    assert client.assistants.calls_to("create")[0].args[0].categories == ["live-cat"]
+
+
+def test_unseeded_category_is_created_as_before():
+    client = FakeClient(categories=FakeCategories(get_categories=[]))
+    report = BulkCreator(client).create_all([_category("cat")], TARGET)
+
+    assert report.skipped == []
+    assert [e.name for e in report.created] == ["cat"]
+
+
+def test_category_create_rejection_still_fails_the_run():
+    client = FakeClient(
+        categories=FakeCategories(
+            get_categories=[], create_category=ApiError("duplicate", 409)
+        )
+    )
+    report = BulkCreator(client).create_all([_category("cat")], TARGET)
+
+    assert report.failed is not None and report.failed.name == "cat"
+    assert report.skipped == []
+
+
+def test_category_listing_failure_fails_the_run_without_creating():
+    client = FakeClient(categories=FakeCategories(get_categories=ApiError("down", 503)))
+    report = BulkCreator(client).create_all([_category("cat")], TARGET)
+
+    assert report.failed is not None
+    assert report.failed.error_type == "platform_rejection"
+    assert client.categories.calls_to("create_category") == []
+
+
+def test_skipped_category_lists_differing_field_names_only():
+    client = _existing_cat_client()
+    doc = _doc(
+        DocumentKind.CATEGORY,
+        "cat",
+        CategorySpec(name="cat", description="brand new text"),
+    )
+    report = BulkCreator(client).create_all([doc], TARGET)
+
+    assert report.skipped[0].differing_fields == ["description"]
+    assert "brand new text" not in report.model_dump_json()
+    assert client.categories.calls_to("update_category") == []
