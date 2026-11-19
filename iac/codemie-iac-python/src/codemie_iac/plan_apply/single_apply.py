@@ -75,6 +75,7 @@ from .bulk_create import (
     check_references,
 )
 from .errors import PLATFORM_ERRORS, ApplyError, PlatformRejectionError
+from .existing import existing_category
 from .field_policy import FieldPolicy, policy_for
 from .guards import (
     guard_datasource_identity,
@@ -713,6 +714,15 @@ class SingleEntityPlanner:
         check_references([document], ctx)
         check_credentials([document], ctx)
         changed = None  # unknown: write everything
+        existing = existing_category(ctx, document) if entity_id is None else None
+        if existing is not None:
+            return ApplyResult(
+                id=existing[0],
+                created=False,
+                changed=False,
+                skipped=True,
+                differing_fields=existing[1],
+            )
         if entity_id is not None:
             plan = self._plan(document, entity_id, target, ctx)
             if plan.is_empty and not force:
