@@ -220,22 +220,20 @@ files = [
 
 [[package]]
 name = "codemie-sdk-python"
-version = "0.1.0"
+version = "0.1.721"
 description = "CodeMie SDK for Python"
 optional = false
-python-versions = "^3.12"
+python-versions = "<4.0,>=3.12"
 groups = ["main"]
-files = []
-develop = true
+files = [
+    {file = "codemie_sdk_python-0.1.721-py3-none-any.whl", hash = "sha256:93285e848a8a9b5cc49dc139fe4b3ec94b2ef11a650b26ece9f311355673f2eb"},
+    {file = "codemie_sdk_python-0.1.721.tar.gz", hash = "sha256:106369690ab184acf0d0adf04448716d9c4f82ded41f60da1d4c6b040b76fe61"},
+]
 
 [package.dependencies]
-pydantic = "^2.12.2"
-pyyaml = "^6.0.2"
-requests = "^2.31.0"
-
-[package.source]
-type = "directory"
-url = "../../../codemie-sdk/sdk/codemie-python"
+pydantic = ">=2.12.2,<3.0.0"
+pyyaml = ">=6.0.2,<7.0.0"
+requests = ">=2.31.0,<3.0.0"
 
 [[package]]
 name = "colorama"
@@ -1012,4 +1010,4 @@ zstd = ["backports-zstd (>=1.0.0) ; python_version < \"3.14\""]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "d9696ca1af07aafceb6ba2a64c4ebfbb839e051d50d8664cf6e51c53450994f3"
+content-hash = "d5421a7952295d71d0b667a92006afabc8b47200a0a0d5fcd23d3bce48158fa9"
