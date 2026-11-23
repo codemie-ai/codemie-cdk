@@ -266,6 +266,35 @@ describe('backupTransformers', () => {
   });
 
   describe('prepareAssistantForYaml', () => {
+    it.each([
+      [['search_kb'], true],
+      [[], false],
+      [undefined, false],
+    ])('handles disabled_context_tools %p', (tools, present) => {
+      const state: StateFile = {
+        version: '1.0',
+        project: 'test-project',
+        lastSync: null,
+        resources: { assistants: {}, datasources: {}, workflows: {}, skills: {} },
+      };
+      const assistant = {
+        id: 'ast-1',
+        name: 'A',
+        description: 'd',
+        system_prompt: 'p',
+        llm_model_type: 'gpt-4',
+        disabled_context_tools: tools,
+      } as unknown as AssistantResponse;
+
+      const result = prepareAssistantForYaml(assistant, state, new Map(), new Map());
+
+      if (present) {
+        expect(result.disabled_context_tools).toEqual(tools);
+      } else {
+        expect(result).not.toHaveProperty('disabled_context_tools');
+      }
+    });
+
     it('should preserve config-id-only MCP servers in backup resource', () => {
       const state: StateFile = {
         version: '1.0',

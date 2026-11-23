@@ -26,6 +26,8 @@ from codemie_sdk.models.assistant import (
 from codemie_sdk.models.integration import CredentialTypes
 
 from codemie_iac.credentials import CredentialRef
+from codemie_iac.envelope import Bundle, Document, DocumentKind, DocumentMeta
+from codemie_iac.serializer import from_yaml, to_yaml
 from codemie_iac.specs.assistant import (
     AssistantSpec,
     MCPServerConfigSpec,
@@ -333,3 +335,77 @@ def test_skill_ids_round_trip_through_from_entity():
         skill_ids=["s1"],
     )
     assert AssistantSpec.from_entity(request).skill_ids == ["s1"]
+
+# disabled_context_tools: local field (the pinned SDK does not expose it yet)
+def _minimal_spec(**kwargs) -> AssistantSpec:
+    return AssistantSpec(
+        name="a",
+        description="d",
+        system_prompt="s",
+        project="p",
+        llm_model_type="m",
+        **kwargs,
+    )
+
+
+_LEGACY_DUMP_KEYS = [
+    "name", "description", "icon_url", "system_prompt", "project", "context",
+    "llm_model_type", "toolkits", "conversation_starters", "shared", "is_react",
+    "is_global", "categories", "slug", "temperature", "top_p",
+    "tools_tokens_size_limit", "mcp_servers", "assistant_ids",
+    "enabled_builtin_subagents", "prompt_variables", "skip_integration_validation",
+    "tool_permissions", "hedging_config", "interactive_enabled",
+    "enable_image_generation", "file_attachment_enabled",
+]  # fmt: skip
+
+
+def test_disabled_context_tools_accepted():
+    spec = _minimal_spec(disabled_context_tools=["search_kb"])
+    assert spec.disabled_context_tools == ["search_kb"]
+    assert spec.model_dump(mode="json")["disabled_context_tools"] == ["search_kb"]
+
+
+def test_disabled_context_tools_omitted_from_dump_when_empty():
+    for spec in (_minimal_spec(), _minimal_spec(disabled_context_tools=[])):
+        dumped = spec.model_dump(mode="json")
+        assert "disabled_context_tools" not in dumped
+        assert list(dumped) == _LEGACY_DUMP_KEYS
+        assert AssistantSpec.model_validate(dumped) == spec
+
+
+def _entity(**kwargs) -> AssistantCreateRequest:
+    return AssistantCreateRequest(
+        name="a",
+        description="d",
+        system_prompt="s",
+        project="p",
+        llm_model_type="m",
+        **kwargs,
+    )
+
+
+def test_from_entity_copies_disabled_context_tools_when_sdk_has_it():
+    request = _entity()
+    object.__setattr__(request, "disabled_context_tools", ["search_kb"])
+    assert AssistantSpec.from_entity(request).disabled_context_tools == ["search_kb"]
+
+
+def test_from_entity_treats_missing_or_none_as_empty():
+    request = _entity()
+    assert AssistantSpec.from_entity(request).disabled_context_tools == []
+    object.__setattr__(request, "disabled_context_tools", None)
+    assert AssistantSpec.from_entity(request).disabled_context_tools == []
+
+
+def test_disabled_context_tools_yaml_roundtrip():
+    spec = _minimal_spec(disabled_context_tools=["search_kb", "search_code_repo"])
+    bundle = Bundle(
+        [
+            Document(
+                version="v1",
+                meta=DocumentMeta(kind=DocumentKind.ASSISTANT, name="a"),
+                spec=spec,
+            )
+        ]
+    )
+    assert from_yaml(to_yaml(bundle)) == bundle
