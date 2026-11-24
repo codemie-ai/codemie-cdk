@@ -130,3 +130,45 @@ def test_out_file_is_utf8_with_non_ascii(tmp_path, monkeypatch):
         "category", "c1", str(target), project="p", client=client, out=io.StringIO()
     )
     assert "Категория \u2713" in target.read_text(encoding="utf-8")
+
+
+# The backend exporter's assistant document: it always writes
+# ``disabled_context_tools`` (``[]`` when unset).
+BACKEND_ASSISTANT = {
+    "version": "v1",
+    "meta": {"kind": "assistant", "name": "Helper"},
+    "spec": {
+        "name": "Helper",
+        "description": "Helps",
+        "system_prompt": "Be {{tone}}",
+        "project": "demo",
+        "context": [{"context_type": "code", "name": "repo"}],
+        "llm_model_type": "gpt-4",
+        "conversation_starters": [],
+        "shared": True,
+        "is_react": True,
+        "is_global": False,
+        "categories": ["Support"],
+        "slug": "helper",
+        "assistant_ids": ["Sub Helper"],
+        "enabled_builtin_subagents": [],
+        "disabled_context_tools": [],
+        "skill_ids": ["Skill A"],
+        "interactive_enabled": False,
+        "enable_image_generation": False,
+        "prompt_variables": [{"key": "tone", "default_value": "friendly"}],
+    },
+}
+
+
+def test_backend_assistant_document_validates():
+    client = FakeClient(export=FakeExport({("assistant", "x"): BACKEND_ASSISTANT}))
+    spec = export_document(client, "assistant", "x").spec
+    assert spec.disabled_context_tools == []
+    assert spec.slug is None and spec.project is None
+
+
+def test_assistant_effort_is_kept():
+    raw = {**BACKEND_ASSISTANT, "spec": {**BACKEND_ASSISTANT["spec"], "effort": "high"}}
+    client = FakeClient(export=FakeExport({("assistant", "x"): raw}))
+    assert export_document(client, "assistant", "x").spec.effort == "high"

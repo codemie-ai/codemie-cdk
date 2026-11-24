@@ -67,7 +67,7 @@ _ASSISTANT = _policy(
     "top_p tools_tokens_size_limit context mcp_servers assistant_ids "
     "skill_ids enabled_builtin_subagents prompt_variables categories tool_permissions "
     "hedging_config interactive_enabled enable_image_generation "
-    "file_attachment_enabled",
+    "file_attachment_enabled disabled_context_tools effort",
 )
 
 _SKILL = _policy(

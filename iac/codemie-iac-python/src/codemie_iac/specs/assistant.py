@@ -90,6 +90,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from codemie_sdk.models.assistant import (
     AssistantCreateRequest,
     Context,
+    EffortLevel,
     HedgingConfig,
     Integration,
     MCPServerConfig,
@@ -465,6 +466,8 @@ class AssistantSpec(BaseModel):
     interactive_enabled: bool | None = None
     enable_image_generation: bool | None = None
     file_attachment_enabled: bool | None = None
+    disabled_context_tools: list[str] | None = None
+    effort: EffortLevel | None = None
 
     @classmethod
     def from_entity(cls, request: AssistantCreateRequest) -> "AssistantSpec":
@@ -501,6 +504,8 @@ class AssistantSpec(BaseModel):
             interactive_enabled=request.interactive_enabled,
             enable_image_generation=request.enable_image_generation,
             file_attachment_enabled=request.file_attachment_enabled,
+            disabled_context_tools=request.disabled_context_tools,
+            effort=request.effort,
             tool_permissions=(
                 ToolPermissionsConfigSpec.from_entity(request.tool_permissions)
                 if request.tool_permissions is not None
