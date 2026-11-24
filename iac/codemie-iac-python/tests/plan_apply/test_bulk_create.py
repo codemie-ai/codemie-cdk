@@ -613,8 +613,7 @@ def test_sharepoint_oauth_without_a_token_fails_the_create_naming_the_field():
 
 def _existing_cat_client(assistants=None, **cat_responses):
     cats = FakeCategories(
-        get_categories=[SimpleNamespace(id="live-cat", name="cat")],
-        get_category=SimpleNamespace(id="live-cat", name="cat", description=None),
+        get_categories=[SimpleNamespace(id="live-cat", name="cat", description=None)],
         **cat_responses,
     )
     return FakeClient(assistants=assistants or IdAssistants(), categories=cats)

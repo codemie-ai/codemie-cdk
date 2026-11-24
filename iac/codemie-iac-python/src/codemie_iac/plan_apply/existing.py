@@ -19,7 +19,6 @@ from typing import TYPE_CHECKING
 from ..envelope import Document, DocumentKind
 from .errors import PLATFORM_ERRORS, PlatformRejectionError
 from .field_policy import policy_for
-from .kinds import adapter_for
 
 if TYPE_CHECKING:
     from .bulk_create import ResolveContext
@@ -32,17 +31,18 @@ def existing_category(
 ) -> tuple[str, list[str]] | None:
     """``(live id, differing field names)`` of the category named like
     ``document``, or ``None`` when it is not a category, there is no client or
-    no such category exists. Reads only; field names only, never values."""
+    no such category exists. Reads only; field names only, never values.
+
+    The diff uses the listing item. Fetching the category by id would need
+    admin rights on the platform, which a regular user applying a bundle lacks."""
     # Local import: single_apply imports bulk_create, which imports this module.
     from .single_apply import Difference, diff
 
     kind, name = document.meta.kind, document.meta.name
-    client = ctx.lookup.client
-    if kind is not DocumentKind.CATEGORY or client is None:
+    if kind is not DocumentKind.CATEGORY or ctx.lookup.client is None:
         return None
     try:
         found = ctx.lookup.find_live(kind, name)
-        live = adapter_for(document).get(client, document, found.id) if found else None
     except PLATFORM_ERRORS as exc:
         # Raised below, outside the handler: the SDK error may carry secrets.
         rejection = PlatformRejectionError(
@@ -56,8 +56,7 @@ def existing_category(
         rejection = None
     if rejection is not None:
         raise rejection
-    if found is None or live is None:
-        # live is None when the entity vanished between list and get.
+    if found is None:
         return None
-    findings = diff(document, live, policy_for(document), ctx.credentials, ctx)
+    findings = diff(document, found.source, policy_for(document), ctx.credentials, ctx)
     return found.id, [f.field for f in findings if isinstance(f, Difference)]

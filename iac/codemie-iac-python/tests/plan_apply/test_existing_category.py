@@ -51,36 +51,39 @@ def _client(**responses):
     return FakeClient(categories=FakeCategories(**responses))
 
 
-def _item(id_="cat-9"):
-    return SimpleNamespace(id=id_, name="x")
+def _item(id_="cat-9", description=None):
+    return SimpleNamespace(id=id_, name="x", description=description)
 
 
 def test_differing_description_is_reported_by_field_name():
-    client = _client(
-        get_categories=[_item()],
-        get_category=SimpleNamespace(id="cat-9", name="x", description="old"),
-    )
+    client = _client(get_categories=[_item(description="old")])
     assert existing_category(_ctx(client), _category("new")) == (
         "cat-9",
         ["description"],
     )
 
 
-def test_equal_description_has_no_differences_though_list_item_lacks_it():
-    client = _client(
-        get_categories=[_item()],
-        get_category=SimpleNamespace(id="cat-9", name="x", description="same"),
-    )
+def test_equal_description_has_no_differences():
+    client = _client(get_categories=[_item(description="same")])
     assert existing_category(_ctx(client), _category("same")) == ("cat-9", [])
+
+
+def test_diff_uses_the_listing_and_never_fetches_the_category_by_id():
+    # The get-by-id route is admin-only on the platform; a regular user would get
+    # a 403 and the reuse would fail.
+    client = _client(
+        get_categories=[_item(description="old")],
+        get_category=ApiError("forbidden", 403),
+    )
+    assert existing_category(_ctx(client), _category("new")) == (
+        "cat-9",
+        ["description"],
+    )
+    assert client.categories.calls_to("get_category") == []
 
 
 def test_unknown_name_returns_none():
     client = _client(get_categories=[])
-    assert existing_category(_ctx(client), _category()) is None
-
-
-def test_entity_vanishing_between_list_and_get_returns_none():
-    client = _client(get_categories=[_item()], get_category=None)
     assert existing_category(_ctx(client), _category()) is None
 
 

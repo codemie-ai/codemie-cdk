@@ -300,8 +300,9 @@ def _existing_category_client():
 
     return FakeClient(
         categories=FakeCategories(
-            get_categories=[SimpleNamespace(id="live-cat", name="cat")],
-            get_category=SimpleNamespace(id="live-cat", name="cat", description="old"),
+            get_categories=[
+                SimpleNamespace(id="live-cat", name="cat", description="old")
+            ],
         )
     )
 
