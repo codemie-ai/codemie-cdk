@@ -47,22 +47,30 @@ def _client(**kw):
 
 
 def _run(client, out_path=None, kind="category", environ=None):
-    out = io.StringIO()
+    out, err = io.StringIO(), io.StringIO()
     status = export_command(
-        kind, "c1", out_path, project="p", client=client, out=out, environ=environ
+        kind,
+        "c1",
+        out_path,
+        project="p",
+        client=client,
+        out=out,
+        err=err,
+        environ=environ,
     )
-    return status, out.getvalue()
+    return status, out.getvalue(), err.getvalue()
 
 
 def test_prints_yaml_to_out():
-    status, text = _run(_client())
+    status, text, err = _run(_client())
     assert status == ExitStatus.SUCCESS
     assert text == EXPECTED
+    assert err == ""
 
 
 def test_out_path_writes_file_and_keeps_out_empty(tmp_path):
     target = tmp_path / "c.yaml"
-    status, text = _run(_client(), str(target))
+    status, text, _ = _run(_client(), str(target))
     assert status == ExitStatus.SUCCESS
     assert text == ""
     assert target.read_text() == EXPECTED
@@ -71,23 +79,24 @@ def test_out_path_writes_file_and_keeps_out_empty(tmp_path):
 def test_http_error_writes_no_file(tmp_path):
     target = tmp_path / "c.yaml"
     error = requests.HTTPError("500 Server Error")
-    status, text = _run(_client(error=error), str(target))
+    status, text, err = _run(_client(error=error), str(target))
     assert status == ExitStatus.APPLY_FAILED
-    assert "HTTPError" in text or "HTTP" in text
+    assert text == ""
+    assert "HTTPError" in err
     assert not target.exists()
 
 
 def test_existing_out_file_untouched_on_failure(tmp_path):
     target = tmp_path / "c.yaml"
     target.write_text("keep")
-    status, _ = _run(_client(), str(target), kind="skill")
+    status, _, _ = _run(_client(), str(target), kind="skill")
     assert status == ExitStatus.APPLY_FAILED
     assert target.read_text() == "keep"
 
 
 def test_credential_is_a_reference_only():
     client = FakeClient(export=FakeExport({("integration", "c1"): INTEGRATION}))
-    status, text = _run(
+    status, text, _ = _run(
         client, kind="integration", environ={"JIRA_TOKEN": "s3cret-value"}
     )
     assert status == ExitStatus.SUCCESS
@@ -113,22 +122,30 @@ def _alias_client(*cats):
 
 
 def _by_alias(client, alias="cat1"):
-    out = io.StringIO()
+    out, err = io.StringIO(), io.StringIO()
     status = export_command(
-        "category", None, None, alias=alias, project="p", client=client, out=out
+        "category",
+        None,
+        None,
+        alias=alias,
+        project="p",
+        client=client,
+        out=out,
+        err=err,
     )
-    return status, out.getvalue()
+    return status, out.getvalue(), err.getvalue()
 
 
 def test_alias_resolves_to_the_entity_id():
-    status, text = _by_alias(_alias_client(SimpleNamespace(id="c1", name="cat1")))
+    status, text, _ = _by_alias(_alias_client(SimpleNamespace(id="c1", name="cat1")))
     assert (status, text) == (ExitStatus.SUCCESS, EXPECTED)
 
 
 def test_unknown_alias_is_unresolved_and_names_the_problem():
-    status, text = _by_alias(_alias_client(), alias="nope")
+    status, text, err = _by_alias(_alias_client(), alias="nope")
     assert status == ExitStatus.UNRESOLVED_INPUT
-    assert "no category named 'nope'" in text
+    assert text == ""
+    assert "no category named 'nope'" in err
 
 
 def test_ambiguous_alias_lists_the_ids():
@@ -136,9 +153,10 @@ def test_ambiguous_alias_lists_the_ids():
         SimpleNamespace(id="c1", name="cat1"),
         SimpleNamespace(id="c2", name="cat1"),
     ]
-    status, text = _by_alias(_alias_client(*cats))
+    status, text, err = _by_alias(_alias_client(*cats))
     assert status == ExitStatus.UNRESOLVED_INPUT
-    assert "--id with one of: c1, c2" in text
+    assert text == ""
+    assert "--id with one of: c1, c2" in err
 
 
 def test_id_or_alias_is_required_and_exclusive():

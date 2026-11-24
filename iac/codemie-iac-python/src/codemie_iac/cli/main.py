@@ -68,7 +68,9 @@ def _run_apply(args: argparse.Namespace, **context: Any) -> ExitStatus:
 
 
 def _run_export(args: argparse.Namespace, **context: Any) -> ExitStatus:
-    return export_command(args.kind, args.id, args.out, alias=args.alias, **context)
+    return export_command(
+        args.kind, args.id, args.out, alias=args.alias, err=sys.stderr, **context
+    )
 
 
 # name -> (help, argument registrar, runner); extend to add commands.
@@ -106,7 +108,9 @@ def _parse(argv: Optional[Sequence[str]]) -> Optional[argparse.Namespace]:
 
 
 def _fail(exc: Exception, args: argparse.Namespace, status: ExitStatus) -> ExitStatus:
-    sys.stdout.write(render_error(exc, json_output=args.json, status=status))
+    # export's stdout is the document, so its errors must not land there.
+    stream = sys.stderr if args.command == "export" else sys.stdout
+    stream.write(render_error(exc, json_output=args.json, status=status))
     return status
 
 

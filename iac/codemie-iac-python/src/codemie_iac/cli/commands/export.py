@@ -14,6 +14,7 @@
 
 """The ``export`` command: write one live entity as a YAML document."""
 
+import sys
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, TextIO
@@ -36,6 +37,7 @@ def export_command(
     project: str,
     client: Any,
     out: TextIO,
+    err: TextIO | None = None,
     environ: Mapping[str, str] | None = None,
     json_output: bool = False,
 ) -> ExitStatus:
@@ -43,8 +45,9 @@ def export_command(
     ``out_path`` or to ``out``.
 
     Nothing is written unless the lookup, fetch, parse and serialise all
-    succeed. ``json_output`` and ``environ`` are accepted for the shared
-    command context and ignored.
+    succeed. Errors go to ``err`` (stderr by default), never to ``out``, so
+    redirecting stdout cannot capture one. ``json_output`` and ``environ`` are
+    accepted for the shared command context and ignored.
     """
     try:
         if entity_id is None:
@@ -56,6 +59,6 @@ def export_command(
             out.write(text)
     except Exception as exc:  # noqa: BLE001 - unmapped errors become APPLY_FAILED
         status = exit_status_for(exc, default=ExitStatus.APPLY_FAILED)
-        out.write(render_error(exc, json_output=False, status=status))
+        (err or sys.stderr).write(render_error(exc, json_output=False, status=status))
         return status
     return ExitStatus.SUCCESS

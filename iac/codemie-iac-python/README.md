@@ -707,9 +707,11 @@ for assistants and skills, `project_name` for integrations and datasources;
 `slug` (unique per project; the platform derives a new one from the name and
 suffixes a clash). So applying the file without `--id`
 creates a new entity, and with `--id` updates the original. Output is YAML
-only; `--json` is not accepted. On any failure (HTTP error, document that
-cannot be represented) the error is printed, the exit status is 2, and
-`--out` is neither created nor overwritten.
+only; `--json` is not accepted. On failure the error goes to stderr (stdout
+stays empty, so `export ... > file` never captures it) and `--out` is neither
+created nor overwritten. The exit status is 2 for an HTTP error, 3 for an alias
+that matches nothing or several entities, and 5 for a platform document the
+CLI cannot parse.
 
 Manual check (live platform): apply an exported file to a clean project and
 compare the entities, ignoring platform ids.
