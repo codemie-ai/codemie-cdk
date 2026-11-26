@@ -524,6 +524,29 @@ def _compare_field(
     return None
 
 
+def _sensitive_keys(items: Any) -> list[Any]:
+    return sorted(v.get("key") for v in items or [] if v.get("is_sensitive"))
+
+
+def _compare_prompt_variables(
+    field: str, document_value: Any, live_value: Any
+) -> Difference | CannotCompare | None:
+    """Sensitive variables are compared by key only (their values are masked and
+    reported separately); the others are compared like any list field."""
+    if _sensitive_keys(document_value) != _sensitive_keys(live_value):
+        return Difference(
+            field=field, document_value=document_value, live_value=live_value
+        )
+
+    def plain(items: Any) -> list[Any]:
+        return [v for v in items or [] if not v.get("is_sensitive")]
+
+    return _compare_field(field, plain(document_value), plain(live_value))
+
+
+_FIELD_COMPARERS = {"prompt_variables": _compare_prompt_variables}
+
+
 def _unobservable_findings(
     document: Document, live_view: Mapping[str, Any], policy: FieldPolicy
 ) -> list[CannotCompare]:
@@ -560,7 +583,8 @@ def diff(
     )
     credential_fields = {f.field for f in findings}
     unresolvable = {f.field for f in findings if _UNRESOLVABLE in f.reason}
-    handled = {f.field for f in findings} | _reference_fields(document) | policy.deny
+    handled = {f.field for f in findings} - {"prompt_variables"}
+    handled |= _reference_fields(document) | policy.deny
     handled.add("settings")  # compared per key below
     for field, document_value in _document_values(document).items():
         if field in handled or field not in policy.comparable or field not in live_view:
@@ -568,7 +592,8 @@ def diff(
         if document_value is None and field not in _CLEARED_WHEN_OMITTED:
             # not authored: the platform decides
             continue
-        finding = _compare_field(field, document_value, live_view[field])
+        compare = _FIELD_COMPARERS.get(field, _compare_field)
+        finding = compare(field, document_value, live_view[field])
         if finding is not None:
             findings.append(finding)
     findings.extend(_settings_findings(document, live_view, resolver))
