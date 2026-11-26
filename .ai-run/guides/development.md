@@ -143,5 +143,5 @@ Do not use these statements as instructions. Check the code.
 ## Don't do
 
 - Do not edit `dist/`. `tsup` generates it.
-- Do not change `version` in `package.json` for a patch release. The tag sets it (`docs/RELEASING.md`, "How versions work").
+- Do not change `version` in `package.json` or `pyproject.toml` for a patch release. The tag sets it (`docs/RELEASING.md`, "How versions work").
 - Do not call the platform from the Python package outside `plan_apply/`.

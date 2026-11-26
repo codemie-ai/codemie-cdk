@@ -141,14 +141,13 @@ Steps are in `docs/RELEASING.md`. Facts that code changes can break:
 
 | Topic | Fact |
 |---|---|
-| Trigger | A published GitHub Release with a `cdk-v` tag starts `publish.yml` (`.github/workflows/publish.yml`, job `verify`, line 37). A merge to `main` never releases |
-| Version | The tag names the version. `package.json` holds only `MAJOR.MINOR.0` |
-| Pre-release | `cdk-vX.Y.Z-rcN` publishes under the npm dist-tag `rc` (`.github/workflows/publish.yml`, line 151) |
-| `verify` job | Has no secrets. It checks the tag, lints, tests, builds and packs |
-| `publish` job | Uses OIDC through the reusable workflow `codemie-ai/ci-workflows` `reusable-publish-npm.yml@main`. `id-token: write` is set on this job only (`.github/workflows/publish.yml`, lines 145-148) |
-| Version check | `check_version.py` is downloaded from `ci-workflows@main` at run time. It is unpinned, a known exposure (`.github/workflows/publish.yml`, lines 81-84) |
+| Trigger | A published GitHub Release with a `cdk-v` tag starts `publish-node.yml` (`.github/workflows/publish-node.yml`, job `verify`, line 37). A `cdk-python-v` tag starts `publish-python.yml` (`.github/workflows/publish-python.yml`, job `verify`, line 36). A merge to `main` never releases |
+| Version | The tag names the version. `package.json` (Node.js) and `pyproject.toml` (Python) hold only `MAJOR.MINOR.0` |
+| Pre-release | `cdk-vX.Y.Z-rcN` publishes under the npm dist-tag `rc` (`.github/workflows/publish-node.yml`, line 151). Python uses `cdk-python-vX.Y.ZrcN` |
+| `verify` job | Has no secrets. It checks the tag, lints, tests, builds and packs (Python: `poetry build`) |
+| `publish` job | Node.js uses OIDC through the reusable workflow `codemie-ai/ci-workflows` `reusable-publish-npm.yml@main`. `id-token: write` is set on this job only (`.github/workflows/publish-node.yml`, lines 145-148). Python publishes to PyPI with `pypa/gh-action-pypi-publish`, also by OIDC, with `id-token: write` on this job only (`.github/workflows/publish-python.yml`, lines 148-151) |
+| Version check | `check_version.py` is downloaded from `ci-workflows@main` at run time. It is unpinned, a known exposure (`.github/workflows/publish-node.yml`, lines 81-84; the same in `.github/workflows/publish-python.yml`, line 84) |
 | Manual dispatch | A real publish needs `dry_run` off, the word `publish` in the `publish` input, and a run from `main` |
-| Python package | Not published. CI checks and builds it only (`docs/RELEASING.md`) |
 
 ## Related repositories
 

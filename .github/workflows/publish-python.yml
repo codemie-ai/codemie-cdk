@@ -1,4 +1,4 @@
-name: Publish Python IaC
+name: Publish Python CDK
 
 on:
   release:

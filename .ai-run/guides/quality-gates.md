@@ -63,4 +63,4 @@ Do not run `codemie-cdk deploy`, `codemie-cdk destroy`, `codemie-cdk backup`, `c
 
 ## Release
 
-The release workflow is `.github/workflows/publish.yml`. Steps are in `docs/RELEASING.md`.
+The release workflows are `.github/workflows/publish-node.yml` (Node.js) and `.github/workflows/publish-python.yml` (Python). Steps are in `docs/RELEASING.md`.

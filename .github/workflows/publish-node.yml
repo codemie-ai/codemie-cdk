@@ -1,4 +1,4 @@
-name: Publish CDK
+name: Publish Node.js CDK
 
 on:
   release:
