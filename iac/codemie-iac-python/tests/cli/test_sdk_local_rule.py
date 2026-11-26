@@ -78,7 +78,7 @@ def test_substring_behaviour_is_recorded():
 def _target(tmp_path, environment):
     path = tmp_path / "codemie.yaml"
     path.write_text(f"project:\n  name: p\nenvironment:\n{environment}")
-    return TargetConfig.resolve(None, str(path), {})
+    return TargetConfig.resolve(str(path), {})
 
 
 def _build(tmp_path, environment):
