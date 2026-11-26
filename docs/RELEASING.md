@@ -1,10 +1,10 @@
 # Releasing
 
-`@codemieai/cdk` and `codemie-cdk-python` are released by the GitHub Actions workflows `publish.yml` and `publish-python.yml`. A release starts when someone with write access publishes a GitHub Release whose tag names the version.
+`@codemieai/cdk` and `codemie-cdk-python` are released by the GitHub Actions workflows `publish-node.yml` and `publish-python.yml`. A release starts when someone with write access publishes a GitHub Release whose tag names the version.
 
 | Package | Registry | Workflow | Tag |
 |---------|----------|----------|-----|
-| `@codemieai/cdk` (`iac/codemie-iac-nodejs`) | npm | `publish.yml` | `cdk-vX.Y.Z` or `cdk-vX.Y.Z-rcN` |
+| `@codemieai/cdk` (`iac/codemie-iac-nodejs`) | npm | `publish-node.yml` | `cdk-vX.Y.Z` or `cdk-vX.Y.Z-rcN` |
 | `codemie-cdk-python` (`iac/codemie-iac-python`) | PyPI | `publish-python.yml` | `cdk-python-vX.Y.Z` or `cdk-python-vX.Y.ZrcN` |
 
 The steps below use `@codemieai/cdk` as the example. `codemie-cdk-python` follows the same flow, with these differences:
@@ -66,7 +66,7 @@ curl -fsSL https://raw.githubusercontent.com/codemie-ai/ci-workflows/main/script
 
 ## Dry run
 
-Start `publish.yml` with `workflow_dispatch` and give the `tag` input. Keep `dry_run` on. The workflow builds the package, runs the version gate and packs `codemieai-cdk-<version>.tgz` as an artifact. Nothing is published.
+Start `publish-node.yml` with `workflow_dispatch` and give the `tag` input. Keep `dry_run` on. The workflow builds the package, runs the version gate and packs `codemieai-cdk-<version>.tgz` as an artifact. Nothing is published.
 
 To publish from a manual run, set `dry_run` off, type `publish` in the `publish` input, and start the run from `main`. The tag must exist and point to the commit the run uses. A manual publish creates no Release, so use a Release for real releases.
 
@@ -77,6 +77,6 @@ An administrator does these steps once. This document only lists them.
 - **Repository.** Create the public repository `codemie-ai/codemie-cdk`.
 - **GitHub environment `release`.** Create it in Settings > Environments. Restrict deployments to the tag `cdk-v*` (and `main` for a manual publish). Add required reviewers if a second approval is wanted.
 - **Who can release.** Only people with write access can create a Release. Keep that group small.
-- **npm trusted publisher.** The workflow publishes with OpenID Connect, so no npm token is stored. In the npm settings of `@codemieai/cdk`, add a trusted publisher: repository `codemie-ai/codemie-cdk`, workflow `publish.yml`, environment `release`. Only the `publish` job has the `id-token: write` permission.
+- **npm trusted publisher.** The workflow publishes with OpenID Connect, so no npm token is stored. In the npm settings of `@codemieai/cdk`, add a trusted publisher: repository `codemie-ai/codemie-cdk`, workflow `publish-node.yml`, environment `release`. Only the `publish` job has the `id-token: write` permission.
 - **First commit.** Push the first exported snapshot to the new repository as a single commit. The export carries no history.
 - **PyPI trusted publisher.** `publish-python.yml` publishes with OpenID Connect too. In the PyPI project `codemie-cdk-python`, add a trusted publisher: owner `codemie-ai`, repository `codemie-cdk`, workflow `publish-python.yml`, environment `release`. For the first release, add it as a pending publisher.

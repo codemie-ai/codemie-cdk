@@ -47,4 +47,4 @@ Primary AI entrypoint for `codemie-cdk`. Load the relevant `.ai-run/guides/` fil
 | Tests | .ai-run/guides/quality-gates.md | CONTRIBUTING.md, .github/workflows/ci.yml | Load guide before running |
 | Build | .ai-run/guides/quality-gates.md | iac/codemie-iac-nodejs/package.json, .github/workflows/ci.yml | Load guide before running |
 | Git / review workflow | .ai-run/guides/standards/git-workflow.md | CONTRIBUTING.md | Load guide before git operations |
-| Release | docs/RELEASING.md | .github/workflows/publish.yml | Only on explicit request |
+| Release | docs/RELEASING.md | .github/workflows/publish-node.yml, .github/workflows/publish-python.yml | Only on explicit request |
