@@ -412,6 +412,15 @@ server's `auth_token` becomes a `CredentialRef` keyed by that server's own
 name — the same narrowing shown in the Integration example, just applied
 automatically.
 
+**Sensitive prompt variables.** A `prompt_variables` entry with
+`is_sensitive: true` never carries a value in the document. Its
+`default_value` is an `env:` reference, `env:<ASSISTANT>_PROMPT_<KEY>`
+(assistant name and variable key upper-cased, `-` turned into `_`), which
+`from_entity` writes for you. A literal (including an empty one) or a
+platform mask is rejected, without echoing the value. The referenced
+environment variable must be set at apply time; the real value is read
+only then and sent to the platform.
+
 `AssistantSpec.skill_ids` lists the skills attached to the assistant. Each
 entry is a reference resolved when the document is applied (see below), and
 an omitted field leaves the skills attached on the platform untouched (they

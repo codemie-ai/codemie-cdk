@@ -237,11 +237,19 @@ def _iter_provider_setting_refs(spec: Any) -> Iterator[Any]:
         yield from _string_leaves(getattr(spec, "settings", None) or {})
 
 
+def _iter_prompt_variable_refs(spec: Any) -> Iterator[Any]:
+    """The ``env:`` reference of every sensitive prompt variable."""
+    for variable in getattr(spec, "prompt_variables", None) or []:
+        if getattr(variable, "is_sensitive", False):
+            yield variable.default_value
+
+
 def _iter_candidates(spec: Any, lookup: ProviderSecretLookup | None) -> Iterator[Any]:
     for entry in getattr(spec, "credential_values", None) or []:
         yield getattr(entry, "ref", None)
     yield from _iter_datasource_secrets(spec, lookup)
     yield from _iter_provider_setting_refs(spec)
+    yield from _iter_prompt_variable_refs(spec)
     for server in _iter_servers(spec):
         yield from _iter_config_values(server)
 
