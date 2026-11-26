@@ -288,6 +288,7 @@ describe('backupTransformers', () => {
         project: 'test-project',
         llm_model_type: 'gpt-4',
         context: [],
+        disabled_context_tools: [],
         toolkits: [],
         conversation_starters: [],
         assistant_ids: [],

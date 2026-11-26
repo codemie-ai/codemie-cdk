@@ -58,7 +58,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, computed_field
+from pydantic import BaseModel, ConfigDict, computed_field, model_validator
 
 from ..credentials import CredentialRef
 from ..envelope import Document, DocumentKind
@@ -75,6 +75,7 @@ from .bulk_create import (
     check_references,
 )
 from .errors import PLATFORM_ERRORS, ApplyError, PlatformRejectionError
+from .existing import existing_category
 from .field_policy import FieldPolicy, policy_for
 from .guards import (
     guard_datasource_identity,
@@ -632,6 +633,16 @@ class ApplyResult(BaseModel):
     uncomparable: list[str] = []
     #: False only when an unchanged entity was left alone (empty plan, no write).
     changed: bool = True
+    #: True when an existing entity was reused (categories); nothing was written.
+    skipped: bool = False
+    #: Names of the fields that differ from the reused entity; never values.
+    differing_fields: list[str] = []
+
+    @model_validator(mode="after")
+    def _skipped_writes_nothing(self) -> "ApplyResult":
+        if self.skipped and (self.created or self.changed):
+            raise ValueError("a skipped result is neither created nor changed")
+        return self
 
 
 class SingleEntityPlanner:
@@ -703,6 +714,15 @@ class SingleEntityPlanner:
         check_references([document], ctx)
         check_credentials([document], ctx)
         changed = None  # unknown: write everything
+        existing = existing_category(ctx, document) if entity_id is None else None
+        if existing is not None:
+            return ApplyResult(
+                id=existing[0],
+                created=False,
+                changed=False,
+                skipped=True,
+                differing_fields=existing[1],
+            )
         if entity_id is not None:
             plan = self._plan(document, entity_id, target, ctx)
             if plan.is_empty and not force:

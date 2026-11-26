@@ -24,6 +24,7 @@ export function createMockAssistant(overrides: Partial<AssistantWithSkills> = {}
     is_global: false,
     assistant_ids: [],
     context: [],
+    disabled_context_tools: [],
     conversation_starters: [],
     creator: 'user-1',
     mcp_servers: [],

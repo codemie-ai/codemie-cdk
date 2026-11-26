@@ -15,7 +15,7 @@
 """Target project and platform connection settings for the plan/apply CLI.
 
 Every connection setting comes from ``codemie.yaml`` (``project.name`` and the
-``environment:`` mapping), except ``--project``, which overrides the project.
+``environment:`` mapping).
 String values in the file may reference ``${NAME}`` / ``${NAME:-default}``; the
 real environment and a ``.env`` file only feed those references and the
 ``env:NAME`` credentials of the documents.
@@ -73,18 +73,17 @@ class TargetConfig:
     @classmethod
     def resolve(
         cls,
-        project_flag: Optional[str],
         config_path: Optional[str],
         environ: Optional[Mapping[str, str]] = None,
         env_file: Optional[str] = None,
     ) -> "TargetConfig":
-        """Read ``codemie.yaml``; ``--project`` overrides ``project.name``."""
+        """Read the target project and connection settings from ``codemie.yaml``."""
         real = os.environ if environ is None else environ
         env = {**_load_env_file(env_file), **real}
         path = config_path or DEFAULT_CONFIG_PATH
         warnings: list[str] = []
         try:
-            return cls._build(project_flag, path, env, warnings)
+            return cls._build(path, env, warnings)
         except ConfigError as exc:
             if not exc.warnings:
                 exc.warnings = tuple(warnings)
@@ -93,7 +92,6 @@ class TargetConfig:
     @classmethod
     def _build(
         cls,
-        project_flag: Optional[str],
         path: str,
         env: Mapping[str, str],
         warnings: list[str],
@@ -101,11 +99,9 @@ class TargetConfig:
         document = _expand(_load_document(path), env)
         config, found = load_config(document)
         warnings.extend(found)
-        project = project_flag or config.project.name
+        project = config.project.name
         if not project:
-            raise ConfigError(
-                f"Missing project: use --project or set project.name in {path}"
-            )
+            raise ConfigError(f"Missing project: set project.name in {path}")
         settings = config.environment
         if not settings.codemie_api_url:
             raise ConfigError(f"Missing environment.codemie_api_url in {path}")
