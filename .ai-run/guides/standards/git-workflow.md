@@ -24,7 +24,7 @@ No credentials, private hostnames, ticket keys or personal e-mail addresses in t
 
 ## Merge strategy
 
-The history has no merge commits. Most merged PRs are one squashed commit with a `(#N)` suffix, but not all: some PRs landed as several commits without the suffix. Repository settings were not read, so the strategy is not confirmed. A merge to `main` never releases anything.
+Squash merge: the PR title becomes the commit subject on `main`, with a `(#N)` suffix. The repository settings allow squash and rebase and do not allow merge commits (`allow_merge_commit=false`, `squash_merge_commit_title=PR_TITLE`), and the history of `main` is all squash commits. The PR title is therefore the only message that reaches `main`, so it must follow Conventional Commits. A merge to `main` never releases anything.
 
 ## Releases
 
@@ -52,4 +52,4 @@ The internal sync is stopped. The guides in `.ai-run/guides` are edited in this 
 | `Internal references` check fails | The tree has an internal reference | Replace it with a placeholder |
 | `Security` check fails on a false positive | A value looks like a secret | Read `.gitleaks.toml` for the stopwords, and ask a maintainer before you add one |
 | `package-lock.json` is untracked after a local install | The package keeps no lockfile, and it has no ignore rule | Do not commit it. Delete it, or leave it unstaged |
-| `dist/`, `__pycache__/` or a virtualenv is untracked under `iac/codemie-iac-python` | The root `.gitignore` covers agent state only. The Node.js package has its own `.gitignore` | Do not stage these paths |
+| `dist/`, `__pycache__/` or a virtualenv is untracked under `iac/codemie-iac-python` | The root `.gitignore` covers agent state and the Python `.coverage` file. The Node.js package has its own `.gitignore` | Do not stage these paths |

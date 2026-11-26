@@ -23,7 +23,7 @@ Two spaces, line width 120, LF, single quotes, semicolons, ES5 trailing commas (
 
 ## Ruff (`iac/codemie-iac-python`)
 
-`pyproject.toml` has no ruff section, so default rules and format apply.
+The default ruff rules and format apply, plus rule `C901` with a McCabe limit of 15 (`iac/codemie-iac-python/pyproject.toml`, `[tool.ruff.lint]` and `[tool.ruff.lint.mccabe]`). A function above the limit fails `ruff check`: split it.
 
 ## Type safety
 

@@ -40,7 +40,7 @@ Auto-fix: `poetry run ruff check --fix .` and `poetry run ruff format .` (not ru
 Notes:
 
 - The tests work offline.
-- `pyproject.toml` has no `[tool.ruff]` section, so ruff uses its defaults. No type checker runs in CI.
+- `pyproject.toml` adds rule `C901` (McCabe complexity) with a limit of 15 (`iac/codemie-iac-python/pyproject.toml`, `[tool.ruff.lint]`). Other ruff rules and the format keep their defaults. No type checker runs in CI.
 - `poetry build` writes `dist/`, which has no ignore rule. Do not stage it.
 
 ## CI-only gates
@@ -59,7 +59,7 @@ Before a PR, search your diff by hand for credentials, private hostnames, ticket
 
 ## Commands that are not gates
 
-Do not run `codemie-cdk deploy`, `codemie-cdk destroy`, `codemie-cdk backup`, `codemie-cdk import` or `codemie-cdk preview` for verification. They connect to a platform with the credentials in `.env`. See `.ai-run/guides/security.md`.
+Do not run `codemie-cdk deploy`, `codemie-cdk destroy`, `codemie-cdk backup`, `codemie-cdk import` or `codemie-cdk preview` for verification. They connect to a platform with the credentials in `.env`. See `.ai-run/guides/development/security-patterns.md`.
 
 ## Release
 

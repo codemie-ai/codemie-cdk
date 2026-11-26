@@ -2,6 +2,8 @@
 
 This repository is a public client tool. It has no server, routes, database or session layer. The risks are secret leaks, destructive platform operations and the supply chain.
 
+The list of files, commands and actions an agent must refuse is in `.ai-run/guides/safety-no-go.md`. `.claude/settings.json` blocks the usual spellings for Claude Code. It is a guard, not a security boundary.
+
 ## Authentication
 
 The Node.js package authenticates through `codemie-sdk`, with client credentials or username and password (`iac/codemie-iac-nodejs/.env.template`). TLS verification is on (`createClient` in `lib/clientFactory.ts`). Do not add an option that turns it off (`SECURITY.md`).
@@ -19,7 +21,7 @@ In `plan_apply`, `env:NAME` references are resolved from the environment only at
 
 Limit: in the Python package, some MCP fields are whole-value matches only. A secret inside a larger string is written as plain text (`iac/codemie-iac-python/README.md`). Do not describe these fields as safe.
 
-The ignore rules for `backups/` and `.env` are in the Node.js package. The root `.gitignore` covers agent state only.
+The ignore rules for `backups/` and `.env` are in the Node.js package. The root `.gitignore` covers agent state and the Python `.coverage` file.
 
 ## Destructive operations
 
