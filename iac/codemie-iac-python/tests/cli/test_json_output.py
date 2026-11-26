@@ -177,3 +177,10 @@ def test_error_other_exception_never_uses_message():
         Odd("token=hunter2"), json_output=False, status=ExitStatus.INVALID_DOCUMENT
     )
     assert "hunter2" not in text and "Odd" in text
+
+
+def test_report_without_skips_renders_no_skipped_block():
+    text = render_bulk_report(
+        BulkCreateReport(created=[]), json_output=False, status=ExitStatus.SUCCESS
+    )
+    assert "skipped" not in text

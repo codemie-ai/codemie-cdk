@@ -504,10 +504,19 @@ client); the rest of the library stays offline. Ground rules:
   result.
 - **Apply never deletes anything.** Not in bulk, not for a single entity.
 - **Bulk apply is create-only and dependency-ordered.** An entity whose name
-  or content equals an existing one is still created; there is no dedupe, no
-  update, and no scoped apply. All checks (dependency cycles, unsupported
+  or content equals an existing one is still created (except a category, see
+  below); there is no update and no scoped apply. All checks (dependency cycles, unsupported
   kinds, unresolved references, unresolvable credentials) run before the first
   write, so a bad bundle fails without creating anything.
+- **An existing category is reused, not created.** Applying a category whose
+  name already exists (bundle or single document) writes nothing and exits
+  successfully; other documents in the bundle use the existing category's id.
+  The result lists it as `skipped (already exists)` with the live id and, when
+  it differs from the document, `differs: <field names>` (names only, never
+  values). The existing category is never updated. In `--json` output it
+  appears under `skipped` (bundle) or as `skipped: true` with
+  `differing_fields` (single document). Two categories of one name in a bundle
+  are rejected as a duplicate document.
 - **Single-entity plan/apply works by id.** You give the id of the live
   entity; `plan` diffs the document against it with no writes, and `apply`
   updates it (or creates it when no id is given).
