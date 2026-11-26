@@ -54,7 +54,7 @@ def test_local_url_with_username_and_password(tmp_path):
         tmp_path,
         "  codemie_api_url: http://localhost:8080\n  username: u\n  password: p\n",
     )
-    target = TargetConfig.resolve(None, cfg, {})
+    target = TargetConfig.resolve(cfg, {})
     assert target.project == "demo"
     assert target._login.kind == "local"
     assert _client_kwargs(target) == {
@@ -78,7 +78,7 @@ def test_local_url_with_username_and_password(tmp_path):
 def test_local_without_full_pair_is_rejected(tmp_path, creds, missing):
     cfg = _cfg(tmp_path, f"  codemie_api_url: http://127.0.0.1\n{creds}")
     with pytest.raises(ConfigError, match=missing):
-        TargetConfig.resolve(None, cfg, {})
+        TargetConfig.resolve(cfg, {})
 
 
 def test_remote_client_credentials(tmp_path):
@@ -87,7 +87,7 @@ def test_remote_client_credentials(tmp_path):
         f"  codemie_api_url: {REMOTE}\n{KEYCLOAK}  client_id: cid\n"
         f"  client_secret: {SECRET}\n",
     )
-    target = TargetConfig.resolve(None, cfg, {})
+    target = TargetConfig.resolve(cfg, {})
     assert target._login.kind == "client_credentials"
     kwargs = _client_kwargs(target)
     assert kwargs["auth_client_id"] == "cid"
@@ -101,7 +101,7 @@ def test_remote_client_id_username_password(tmp_path):
         f"  codemie_api_url: {REMOTE}\n{KEYCLOAK}  client_id: c\n"
         "  username: u\n  password: p\n",
     )
-    target = TargetConfig.resolve(None, cfg, {})
+    target = TargetConfig.resolve(cfg, {})
     kwargs = _client_kwargs(target)
     assert target._login.kind == "password"
     assert kwargs["auth_client_id"] == "c" and kwargs["username"] == "u"
@@ -114,7 +114,7 @@ def test_remote_username_password_without_client_id_is_rejected(tmp_path):
         f"  codemie_api_url: {REMOTE}\n{KEYCLOAK}  username: u\n  password: p\n",
     )
     with pytest.raises(ConfigError, match="environment.client_id"):
-        TargetConfig.resolve(None, cfg, {})
+        TargetConfig.resolve(cfg, {})
 
 
 @pytest.mark.parametrize(
@@ -127,7 +127,7 @@ def test_remote_client_secret_with_user_keys_is_ambiguous(tmp_path, user):
         + user,
     )
     with pytest.raises(ConfigError, match="not both"):
-        TargetConfig.resolve(None, cfg, {})
+        TargetConfig.resolve(cfg, {})
 
 
 @pytest.mark.parametrize(
@@ -156,7 +156,7 @@ def test_remote_client_secret_with_user_keys_is_ambiguous(tmp_path, user):
 def test_remote_incomplete_names_environment_keys(tmp_path, body, missing):
     cfg = _cfg(tmp_path, f"  codemie_api_url: {REMOTE}\n{body}")
     with pytest.raises(ConfigError) as info:
-        TargetConfig.resolve(None, cfg, {})
+        TargetConfig.resolve(cfg, {})
     assert missing in str(info.value)
     assert "environment." in str(info.value)
 
@@ -167,7 +167,7 @@ def test_client_id_without_secret_names_the_client_for_password_grant(tmp_path):
         f"  codemie_api_url: {REMOTE}\n{KEYCLOAK}  client_id: c\n"
         "  username: u\n  password: p\n",
     )
-    target = TargetConfig.resolve(None, cfg, {})
+    target = TargetConfig.resolve(cfg, {})
     kwargs = _client_kwargs(target)
     assert target._login.kind == "password"
     assert kwargs["auth_client_id"] == "c" and "auth_client_secret" not in kwargs
@@ -180,7 +180,7 @@ def test_client_secret_without_id_is_not_replaced_by_password_grant(tmp_path):
         "  username: u\n  password: p\n",
     )
     with pytest.raises(ConfigError, match="environment.client_id"):
-        TargetConfig.resolve(None, cfg, {})
+        TargetConfig.resolve(cfg, {})
 
 
 def test_empty_value_counts_as_missing(tmp_path):
@@ -189,23 +189,23 @@ def test_empty_value_counts_as_missing(tmp_path):
         f"  codemie_api_url: {REMOTE}\n{KEYCLOAK}  username: u\n  password: ''\n",
     )
     with pytest.raises(ConfigError, match="environment.password"):
-        TargetConfig.resolve(None, cfg, {})
+        TargetConfig.resolve(cfg, {})
 
 
 def test_missing_default_config_file_is_config_error(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     with pytest.raises(ConfigError, match=r"codemie\.yaml"):
-        TargetConfig.resolve("p", None, {})
+        TargetConfig.resolve(None, {})
 
 
 def test_explicit_unreadable_path_raises(tmp_path):
     with pytest.raises(ConfigError, match="nope.yaml"):
-        TargetConfig.resolve("p", str(tmp_path / "nope.yaml"), {})
+        TargetConfig.resolve(str(tmp_path / "nope.yaml"), {})
 
 
 def test_invalid_yaml_raises(tmp_path):
     with pytest.raises(ConfigError, match="not valid YAML"):
-        TargetConfig.resolve("p", _write(tmp_path, "project: [unclosed\n"), {})
+        TargetConfig.resolve(_write(tmp_path, "project: [unclosed\n"), {})
 
 
 def test_empty_project_name_after_expansion_names_key_and_file(tmp_path):
@@ -214,7 +214,7 @@ def test_empty_project_name_after_expansion_names_key_and_file(tmp_path):
         "project:\n  name: ${PROJ:-}\nenvironment:\n  codemie_api_url: http://localhost\n",
     )
     with pytest.raises(ConfigError, match=r"project\.name.*codemie\.yaml"):
-        TargetConfig.resolve(None, cfg, {})
+        TargetConfig.resolve(cfg, {})
 
 
 def test_empty_api_url_after_expansion_names_key_and_file(tmp_path):
@@ -222,16 +222,7 @@ def test_empty_api_url_after_expansion_names_key_and_file(tmp_path):
         tmp_path, "project:\n  name: p\nenvironment:\n  codemie_api_url: ${U:-}\n"
     )
     with pytest.raises(ConfigError, match=r"environment\.codemie_api_url.*codemie"):
-        TargetConfig.resolve(None, cfg, {})
-
-
-def test_project_flag_overrides_file_and_allows_empty_name(tmp_path):
-    cfg = _write(
-        tmp_path,
-        "project:\n  name: file\nenvironment:\n  codemie_api_url: http://localhost\n"
-        "  username: u\n  password: p\n",
-    )
-    assert TargetConfig.resolve("flag", cfg, {}).project == "flag"
+        TargetConfig.resolve(cfg, {})
 
 
 def test_fixed_name_variables_are_ignored(tmp_path):
@@ -245,7 +236,7 @@ def test_fixed_name_variables_are_ignored(tmp_path):
         "CODEMIE_USERNAME": "x",
         "CODEMIE_VERIFY_SSL": "false",
     }
-    target = TargetConfig.resolve(None, cfg, env)
+    target = TargetConfig.resolve(cfg, env)
     assert target.project == "demo"
     assert _client_kwargs(target)["username"] == "u"
     assert target.warnings == ()
@@ -257,7 +248,7 @@ def test_jwt_token_never_reaches_client_or_output(tmp_path):
         f"  codemie_api_url: {REMOTE}\n  jwt_token: {SECRET}\n",
     )
     with pytest.raises(ConfigError) as info:
-        TargetConfig.resolve(None, cfg, {})
+        TargetConfig.resolve(cfg, {})
     assert SECRET not in str(info.value)
     assert SECRET not in "".join(info.value.warnings)
     assert any("environment.jwt_token" in w for w in info.value.warnings)
@@ -269,7 +260,7 @@ def test_jwt_token_with_complete_login_is_only_a_warning(tmp_path):
         f"  codemie_api_url: http://localhost\n  username: u\n  password: p\n"
         f"  jwt_token: {SECRET}\n",
     )
-    target = TargetConfig.resolve(None, cfg, {})
+    target = TargetConfig.resolve(cfg, {})
     assert len(target.warnings) == 1
     assert SECRET not in target.warnings[0] + repr(target)
     assert SECRET not in str(_client_kwargs(target))
@@ -281,7 +272,7 @@ def test_api_section_is_unknown_and_not_a_fallback(tmp_path):
         f"project:\n  name: p\napi:\n  url: {REMOTE}\n",
     )
     with pytest.raises(ConfigError, match="codemie_api_url") as info:
-        TargetConfig.resolve(None, cfg, {})
+        TargetConfig.resolve(cfg, {})
     assert any("api" in w for w in info.value.warnings)
 
 
@@ -293,7 +284,7 @@ def test_verify_ssl_off_warns_once_and_is_passed(tmp_path, value):
         f"  verify_ssl: {value}\n",
     )
     env = {"NAME": "FALSE"} if value.startswith("$") else {}
-    target = TargetConfig.resolve(None, cfg, env)
+    target = TargetConfig.resolve(cfg, env)
     assert len([w for w in target.warnings if "verify_ssl" in w]) == 1
     assert _client_kwargs(target)["verify_ssl"] is False
 
@@ -304,7 +295,7 @@ def test_verify_ssl_empty_expansion_means_true(tmp_path):
         "  codemie_api_url: http://localhost\n  username: u\n  password: p\n"
         "  verify_ssl: ${NAME:-}\n",
     )
-    target = TargetConfig.resolve(None, cfg, {})
+    target = TargetConfig.resolve(cfg, {})
     assert target.warnings == ()
     assert _client_kwargs(target)["verify_ssl"] is True
 
@@ -316,13 +307,13 @@ def test_verify_ssl_garbage_is_config_error(tmp_path, value):
         f"  codemie_api_url: http://localhost\n  verify_ssl: {value}\n",
     )
     with pytest.raises(ConfigError, match=r"environment\.verify_ssl"):
-        TargetConfig.resolve(None, cfg, {})
+        TargetConfig.resolve(cfg, {})
 
 
 def test_wrongly_typed_section_does_not_leak_value(tmp_path):
     cfg = _write(tmp_path, f"project: {SECRET}\n")
     with pytest.raises(ConfigError) as info:
-        TargetConfig.resolve("p", cfg, {})
+        TargetConfig.resolve(cfg, {})
     assert SECRET not in str(info.value)
 
 
@@ -332,7 +323,7 @@ def test_expansion_from_environment_mapping(tmp_path):
         "  codemie_api_url: ${API:-http://localhost}\n  username: ${U}\n"
         "  password: ${P}\n",
     )
-    kwargs = _client_kwargs(TargetConfig.resolve(None, cfg, {"U": "me", "P": "pw"}))
+    kwargs = _client_kwargs(TargetConfig.resolve(cfg, {"U": "me", "P": "pw"}))
     assert (kwargs["codemie_api_domain"], kwargs["username"]) == (
         "http://localhost",
         "me",
@@ -346,7 +337,7 @@ def test_unset_or_empty_variable_without_default_is_a_config_error(tmp_path, env
         "  codemie_api_url: http://localhost\n  username: u\n  password: ${PW}\n",
     )
     with pytest.raises(ConfigError, match=r"\$\{PW\}.*not set"):
-        TargetConfig.resolve(None, cfg, environ)
+        TargetConfig.resolve(cfg, environ)
 
 
 def test_expansion_nested_and_literal_dollar():
@@ -366,8 +357,8 @@ def test_node_style_file_with_unset_bare_variable_is_a_config_error(tmp_path):
         "resources:\n  assistants:\n    - name: a\n      token: ${NODE_ONLY_VAR}\n",
     )
     with pytest.raises(ConfigError, match=r"\$\{NODE_ONLY_VAR\}"):
-        TargetConfig.resolve(None, cfg, {})
-    ok = TargetConfig.resolve(None, cfg, {"NODE_ONLY_VAR": "x"})
+        TargetConfig.resolve(cfg, {})
+    ok = TargetConfig.resolve(cfg, {"NODE_ONLY_VAR": "x"})
     assert ok.warnings == ()
 
 
@@ -393,7 +384,7 @@ def test_secrets_not_in_repr(tmp_path):
         tmp_path,
         f"  codemie_api_url: http://localhost\n  username: u\n  password: {SECRET}\n",
     )
-    assert SECRET not in repr(TargetConfig.resolve(None, cfg, {}))
+    assert SECRET not in repr(TargetConfig.resolve(cfg, {}))
 
 
 def test_config_error_maps_to_config_error_status():

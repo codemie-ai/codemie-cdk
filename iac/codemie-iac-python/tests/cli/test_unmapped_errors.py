@@ -166,4 +166,4 @@ def test_non_utf8_config_is_config_error(tmp_path):
     from codemie_iac.cli.target_config import ConfigError
 
     with pytest.raises(ConfigError):
-        TargetConfig.resolve("p", str(path), environ={})
+        TargetConfig.resolve(str(path), environ={})

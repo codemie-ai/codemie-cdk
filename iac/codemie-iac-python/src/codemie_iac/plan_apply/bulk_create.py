@@ -17,9 +17,10 @@
 ``BulkCreator.create_all`` first runs every preflight check
 (``PREFLIGHT_CHECKS``: cycles, supported kinds, target project, adapter
 support, reference resolution, credential resolution) and only then performs
-writes, in dependency order. There is no dedupe, update, delete or scoped
-apply: an entity whose name or content equals an existing one is still
-created. Platform ids are held in memory for the duration of one run only,
+writes, in dependency order. There is no update, delete or scoped apply, and
+only a category is reused: one that already exists is skipped (its id is used
+for references); an entity of any other kind whose name or content equals an
+existing one is still created. Platform ids are held in memory for the duration of one run only,
 and only substituted into request bodies; they are never written anywhere.
 
 Datasource ``create`` returns no id, so ``created_id`` looks the new
@@ -60,6 +61,7 @@ from .errors import (
     UnresolvedReferenceError,
     scrub,
 )
+from .existing import existing_category
 from .guards import guard_name, guard_project, guard_supported, with_default_project
 from .kinds import adapter_for, created_id
 from .lookup import EntityKey, NameLookup, Reference
@@ -74,6 +76,7 @@ __all__ = [
     "CreatedEntity",
     "FailedEntity",
     "ResolveContext",
+    "SkippedEntity",
     "build_resolved",
     "check_adapters",
     "check_credentials",
@@ -92,6 +95,17 @@ class CreatedEntity(BaseModel):
     id: str | None = None
 
 
+class SkippedEntity(BaseModel):
+    """An existing entity that was reused instead of created."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: DocumentKind
+    name: str
+    id: str
+    differing_fields: list[str] = []
+
+
 class FailedEntity(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -106,6 +120,7 @@ class BulkCreateReport(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     created: list[CreatedEntity]
+    skipped: list[SkippedEntity] = []
     failed: FailedEntity | None = None
 
 
@@ -506,15 +521,20 @@ class BulkCreator:
         for check in PREFLIGHT_CHECKS:
             check(docs, ctx)
         created: list[CreatedEntity] = []
+        skipped: list[SkippedEntity] = []
         for document in DependencyGraph(docs).order():
             try:
-                created.append(self._create_one(document, ctx))
+                outcome = self._create_one(document, ctx)
             except Exception as exc:  # noqa: BLE001 - keep the created list
                 error = self._as_apply_error(document, exc)
                 return BulkCreateReport(
-                    created=created, failed=_failed(document, error)
+                    created=created, skipped=skipped, failed=_failed(document, error)
                 )
-        return BulkCreateReport(created=created)
+            if isinstance(outcome, SkippedEntity):
+                skipped.append(outcome)
+            else:
+                created.append(outcome)
+        return BulkCreateReport(created=created, skipped=skipped)
 
     def _as_apply_error(self, document: Document, exc: Exception) -> ApplyError:
         if isinstance(exc, ApplyError):
@@ -537,8 +557,16 @@ class BulkCreator:
             scrub(f"{type(exc).__name__}: {exc}", secrets),
         )
 
-    def _create_one(self, document: Document, ctx: ResolveContext) -> CreatedEntity:
+    def _create_one(
+        self, document: Document, ctx: ResolveContext
+    ) -> CreatedEntity | SkippedEntity:
         kind, name = document.meta.kind, document.meta.name
+        existing = existing_category(ctx, document)
+        if existing is not None:
+            ctx.created[(kind, name)] = existing[0]
+            return SkippedEntity(
+                kind=kind, name=name, id=existing[0], differing_fields=existing[1]
+            )
         adapter = adapter_for(document)
         resolved = build_resolved(document, ctx)
         try:

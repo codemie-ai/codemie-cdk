@@ -71,7 +71,7 @@ def test_plan_dispatch(target, monkeypatch):
         return ExitStatus.CHANGES_PENDING
 
     monkeypatch.setattr(main_module, "plan_command", fake)
-    code = main(["--project", "p", "plan", "f.yaml", "--id", "x", "--json"])
+    code = main(["plan", "f.yaml", "--id", "x", "--json"])
     assert code == 1
     assert calls["file"] == Path("f.yaml")
     assert calls["entity_id"] == "x"
@@ -149,3 +149,26 @@ def test_command_without_target_skips_resolve(monkeypatch):
     )
     assert main(["plan", "f.yaml", "--id", "x"]) == 0
     assert "client" not in seen
+
+
+def test_export_config_failure_goes_to_stderr(no_config, capsys):
+    assert main(["export", "category", "--id", "x"]) == 4
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "error:" in captured.err
+
+
+def test_export_runner_failure_goes_to_stderr(target, monkeypatch, capsys):
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(main_module, "export_command", boom)
+    assert main(["export", "category", "--id", "x"]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "error:" in captured.err
+
+
+def test_export_usage_check_failure_goes_to_stderr(target, capsys):
+    assert main(["export", "category"]) == 4
+    assert capsys.readouterr().out == ""
