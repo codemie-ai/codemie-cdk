@@ -59,13 +59,15 @@ _ASSISTANT = _policy(
     "unique_likes_count unique_dislikes_count clone_count "
     # Marketplace review state is set by reviewers, not by the document.
     # Response-only: the create and update requests do not accept them.
-    "is_verified marketplace_status marketplace_decision_reason",
+    "is_verified marketplace_status marketplace_decision_reason "
+    # Derived by the platform from the model settings.
+    "effective_llm_model_reason",
     comparable="name description icon_url system_prompt project llm_model_type "
     "toolkits conversation_starters shared is_react is_global slug temperature "
     "top_p tools_tokens_size_limit context mcp_servers assistant_ids "
     "skill_ids enabled_builtin_subagents prompt_variables categories tool_permissions "
     "hedging_config interactive_enabled enable_image_generation "
-    "file_attachment_enabled",
+    "file_attachment_enabled disabled_context_tools effort",
 )
 
 _SKILL = _policy(

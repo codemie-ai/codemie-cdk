@@ -19,7 +19,9 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence
 
+from ..envelope import DocumentKind
 from .commands.apply import apply_command
+from .commands.export import export_command
 from .commands.plan import plan_command
 from .exit_status import ExitStatus
 from .init_command import init_command
@@ -39,6 +41,16 @@ def _add_apply(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--id", dest="entity_id", default=None, help="entity id")
 
 
+def _add_export(sub: argparse.ArgumentParser) -> None:
+    sub.add_argument(
+        "kind", choices=[k.value for k in DocumentKind], help="entity kind"
+    )
+    which = sub.add_mutually_exclusive_group(required=True)
+    which.add_argument("--id", help="entity id")
+    which.add_argument("--alias", help="entity alias or name in the target project")
+    sub.add_argument("--out", default=None, help="write YAML to this file")
+
+
 def _add_init(sub: argparse.ArgumentParser) -> None:
     sub.add_argument("--force", action="store_true", help="overwrite an existing file")
 
@@ -55,25 +67,34 @@ def _run_apply(args: argparse.Namespace, **context: Any) -> ExitStatus:
     return apply_command(args.path, args.entity_id, **context)
 
 
+def _run_export(args: argparse.Namespace, **context: Any) -> ExitStatus:
+    return export_command(
+        args.kind, args.id, args.out, alias=args.alias, err=sys.stderr, **context
+    )
+
+
 # name -> (help, argument registrar, runner); extend to add commands.
 #: name -> (help text, argument registrar, runner, needs_target)
 _COMMANDS: dict[str, tuple[str, Callable, Callable, bool]] = {
     "plan": ("Show the diff against a live entity", _add_plan, _run_plan, True),
     "apply": ("Apply documents to the platform", _add_apply, _run_apply, True),
+    "export": ("Export a live entity as YAML", _add_export, _run_export, True),
     "init": ("Write a codemie.yaml template", _add_init, _run_init, False),
 }
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="codemie-iac")
-    parser.add_argument("--project", default=None, help="target project")
     parser.add_argument("-c", "--config", default=None, help="codemie.yaml path")
     parser.add_argument("--env-file", default=None, help=".env path")
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name, (help_text, register, _, _) in _COMMANDS.items():
         sub = subparsers.add_parser(name, help=help_text)
         register(sub)
-        sub.add_argument("--json", action="store_true", help="JSON output")
+        if name == "export":  # YAML only
+            sub.set_defaults(json=False)
+        else:
+            sub.add_argument("--json", action="store_true", help="JSON output")
     return parser
 
 
@@ -87,7 +108,9 @@ def _parse(argv: Optional[Sequence[str]]) -> Optional[argparse.Namespace]:
 
 
 def _fail(exc: Exception, args: argparse.Namespace, status: ExitStatus) -> ExitStatus:
-    sys.stdout.write(render_error(exc, json_output=args.json, status=status))
+    # export's stdout is the document, so its errors must not land there.
+    stream = sys.stderr if args.command == "export" else sys.stdout
+    stream.write(render_error(exc, json_output=args.json, status=status))
     return status
 
 
@@ -107,7 +130,7 @@ def _print_warnings(warnings: Sequence[str]) -> None:
 def _connect(args: argparse.Namespace) -> tuple[TargetConfig, Any]:
     """Resolve the target and build the client; warnings are printed first."""
     try:
-        target = TargetConfig.resolve(args.project, args.config, env_file=args.env_file)
+        target = TargetConfig.resolve(args.config, env_file=args.env_file)
     except Exception as exc:  # noqa: BLE001 - rendered by type name only
         _print_warnings(getattr(exc, "warnings", ()))
         raise

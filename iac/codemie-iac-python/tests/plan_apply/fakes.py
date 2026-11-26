@@ -22,6 +22,8 @@ response (an ``Exception`` instance response is raised instead).
 from types import SimpleNamespace
 from typing import Any, NamedTuple
 
+import requests
+
 __all__ = [
     "Call",
     "FakeAssistants",
@@ -259,6 +261,25 @@ class FakeCategories(FakeService):
         return self._call("get_category", category_id)
 
 
+class FakeExport:
+    """``client.export``: canned documents by ``(kind, id)``; others are 404."""
+
+    def __init__(self, documents=None, error=None):
+        self.documents = documents or {}
+        self.error = error
+        self.calls: list[tuple[str, str]] = []
+
+    def export(self, kind, entity_id):
+        self.calls.append((kind, entity_id))
+        if self.error:
+            raise self.error
+        if (kind, entity_id) not in self.documents:
+            response = requests.Response()
+            response.status_code = 404
+            raise requests.HTTPError("404 Not Found", response=response)
+        return self.documents[(kind, entity_id)]
+
+
 class FakeClient:
     """Stand-in for ``CodeMieClient``; pass a fake to override any service."""
 
@@ -269,3 +290,4 @@ class FakeClient:
         self.datasources = services.get("datasources", FakeDatasources())
         self.integrations = services.get("integrations", FakeIntegrations())
         self.categories = services.get("categories", FakeCategories())
+        self.export = services.get("export", FakeExport())

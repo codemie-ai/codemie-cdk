@@ -684,11 +684,12 @@ src/codemie_iac/
 
 ```
 codemie-iac [-c/--config codemie.yaml] init [--force]
-codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] plan <file> --id <id> [--json]
-codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] apply <path> [--id <id>] [--json]
+codemie-iac [-c/--config codemie.yaml] [--env-file PATH] plan <file> --id <id> [--json]
+codemie-iac [-c/--config codemie.yaml] [--env-file PATH] export <kind> (--id ID | --alias NAME) [--out PATH]
+codemie-iac [-c/--config codemie.yaml] [--env-file PATH] apply <path> [--id <id>] [--json]
 ```
 
-Global flags `--project`, `-c/--config` and `--env-file` go BEFORE the
+Global flags `-c/--config` and `--env-file` go BEFORE the
 subcommand; `--json` goes after it.
 
 **`init`** writes a `codemie.yaml` template to the `-c/--config` path (default
@@ -700,6 +701,29 @@ rename them.
 The `project` of a document (`project_name` for integrations and datasources)
 is optional and defaults to the target project. A different explicit value is
 refused with `project_mismatch`.
+
+**`export`** writes one live entity as a YAML document (the same format `plan`
+and `apply` read) to stdout, or to the `--out` file. `<kind>` is one of
+`assistant`, `datasource`, `integration`, `skill`, `category`, `workflow`.
+Pick the entity with exactly one of `--id` (its platform id) or `--alias` (its
+alias or name in the target project, e.g. an integration's alias). An alias that
+matches nothing, or several entities, fails with exit status 3; the several are
+listed so you can re-run with `--id`.
+Credentials appear only as `env:` references, never as values. Fields that are not part of the entity's definition
+(`NON_PORTABLE_FIELDS` in `export.py`) are left out: the project field (`project`
+for assistants and skills, `project_name` for integrations and datasources;
+`apply` takes it from the target project in `codemie.yaml`) and an assistant's
+`slug` (unique per project; the platform derives a new one from the name and
+suffixes a clash). So applying the file without `--id`
+creates a new entity, and with `--id` updates the original. Output is YAML
+only; `--json` is not accepted. On failure the error goes to stderr (stdout
+stays empty, so `export ... > file` never captures it) and `--out` is neither
+created nor overwritten. The exit status is 2 for an HTTP error, 3 for an alias
+that matches nothing or several entities, and 5 for a platform document the
+CLI cannot parse.
+
+Manual check (live platform): apply an exported file to a clean project and
+compare the entities, ignoring platform ids.
 
 ### `codemie.yaml`
 
@@ -713,7 +737,7 @@ the `project` and `environment` keys inline.
 
 | Key | Required | Meaning |
 |---|---|---|
-| `project.name` | yes, unless `--project` is given | target project |
+| `project.name` | yes | target project |
 | `environment.codemie_api_url` | yes | platform API URL |
 | `environment.username`, `environment.password` | local login; remote password grant | username and password |
 | `environment.auth_server_url`, `environment.auth_realm_name` | remote login | Keycloak URL and realm |
@@ -800,8 +824,8 @@ be applied together.
 **Single mode: one file, one document.**
 
 ```
-codemie-iac --project my-project plan examples/simple/assistant.yaml --id <id>
-codemie-iac --project my-project apply examples/simple/assistant.yaml
+codemie-iac plan examples/simple/assistant.yaml --id <id>
+codemie-iac apply examples/simple/assistant.yaml
 ```
 
 **Batch mode: a directory.** `apply <dir>` creates every `*.yaml` / `*.yml`
@@ -810,13 +834,13 @@ documents may reference each other by name (the `batch/` example:
 integration, datasource, category, assistant).
 
 ```
-codemie-iac --project my-project apply examples/batch
+codemie-iac apply examples/batch
 ```
 
 **Create:** `apply <file>` without `--id`, or `apply <dir>`.
 
 ```
-codemie-iac --project my-project apply examples/simple/skill.yaml
+codemie-iac apply examples/simple/skill.yaml
 ```
 
 **Update:** `apply <file> --id <id>` updates the existing asset with that
@@ -825,12 +849,12 @@ platform id. `plan <file> --id <id>` shows the changes without applying them
 output.
 
 ```
-codemie-iac --project my-project apply examples/simple/skill.yaml --id <id>
-codemie-iac --project my-project plan examples/simple/skill.yaml --id <id>
-codemie-iac --project my-project plan examples/simple/skill.yaml --id <id> --json
+codemie-iac apply examples/simple/skill.yaml --id <id>
+codemie-iac plan examples/simple/skill.yaml --id <id>
+codemie-iac plan examples/simple/skill.yaml --id <id> --json
 ```
 
-Global flags (`--project`, `-c`) go before the subcommand, `--json` after it.
+The global flag `-c` goes before the subcommand, `--json` after it.
 Credentials in the examples are `env:NAME` references; export those variables
 before applying. IDs inside workflows (`workflow_id`, `datasource_ids`,
 `skill_ids`) are placeholders, or names of skills and datasources that are
