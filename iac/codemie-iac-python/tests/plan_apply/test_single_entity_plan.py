@@ -530,3 +530,117 @@ def test_omitted_assistant_slug_is_not_a_difference():
         "slug": "asst",
     }
     assert diff(doc, live, FIELD_POLICIES["assistant"], _resolver()) == []
+
+
+def _sensitive_doc():
+    return _assistant(
+        prompt_variables=[
+            PromptVariableSpec(
+                key="k", default_value="env:ASST_PROMPT_K", is_sensitive=True
+            )
+        ]
+    )
+
+
+def _live_sensitive():
+    return _live_assistant(
+        prompt_variables=[
+            {
+                "key": "k",
+                "description": None,
+                "default_value": "*" * 8,
+                "is_sensitive": True,
+            }
+        ]
+    )
+
+
+def test_sensitive_prompt_variable_vs_live_mask_is_value_free_cannot_compare():
+    result = diff(
+        _sensitive_doc(),
+        _live_sensitive(),
+        policy_for(_sensitive_doc()),
+        EnvCredentialResolver({"ASST_PROMPT_K": SECRET}),
+    )
+    assert [type(r) for r in result] == [CannotCompare]
+    assert result[0].field == "prompt_variables"
+    assert SECRET not in result[0].reason
+    assert "unresolvable" not in result[0].reason
+
+
+def test_unresolvable_sensitive_prompt_variable_reports_unresolvable_reason():
+    result = _run(_sensitive_doc(), _live_sensitive())
+    assert [type(r) for r in result] == [CannotCompare]
+    assert "unresolvable credential reference" in result[0].reason
+
+
+@pytest.mark.parametrize("live_extra", [{"is_sensitive": False}, {}])
+def test_non_sensitive_variable_ignores_live_sensitivity_flag(live_extra):
+    doc = _assistant(
+        prompt_variables=[PromptVariableSpec(key="k", default_value="same")]
+    )
+    live = _live_assistant(
+        prompt_variables=[
+            {"key": "k", "description": None, "default_value": "same", **live_extra}
+        ]
+    )
+    assert _run(doc, live) == []
+
+
+def _doc_with_plain(plain_value):
+    return _assistant(
+        prompt_variables=[
+            PromptVariableSpec(
+                key="k", default_value="env:ASST_PROMPT_K", is_sensitive=True
+            ),
+            PromptVariableSpec(key="p", default_value=plain_value),
+        ]
+    )
+
+
+def _live_with_plain(*plain_values):
+    return _live_assistant(
+        prompt_variables=[
+            {
+                "key": "k",
+                "description": None,
+                "default_value": "*" * 8,
+                "is_sensitive": True,
+            },
+            *[
+                {"key": f"p{i}" if i else "p", "description": None, "default_value": v}
+                for i, v in enumerate(plain_values)
+            ],
+        ]
+    )
+
+
+def test_plain_variable_edit_next_to_a_sensitive_one_is_a_difference():
+    result = _run(_doc_with_plain("new"), _live_with_plain("old"))
+    assert {type(r) for r in result} == {Difference, CannotCompare}
+    assert all(r.field == "prompt_variables" for r in result)
+
+
+def test_added_plain_variable_next_to_a_sensitive_one_is_a_difference():
+    live = _live_assistant(
+        prompt_variables=[
+            {
+                "key": "k",
+                "description": None,
+                "default_value": "*" * 8,
+                "is_sensitive": True,
+            }
+        ]
+    )
+    result = _run(_doc_with_plain("new"), live)
+    assert Difference in [type(r) for r in result]
+
+
+def test_unchanged_plain_variable_next_to_a_sensitive_one_is_not_a_difference():
+    result = _run(_doc_with_plain("same"), _live_with_plain("same"))
+    assert [type(r) for r in result] == [CannotCompare]
+
+
+def test_added_sensitive_variable_is_a_difference():
+    result = _run(_sensitive_doc(), _live_assistant(prompt_variables=[]))
+    assert Difference in [type(r) for r in result]

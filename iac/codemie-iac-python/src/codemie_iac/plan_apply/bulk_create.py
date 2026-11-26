@@ -253,6 +253,17 @@ def _mcp_body(server: dict, ctx: ResolveContext) -> dict:
     return out
 
 
+def _prompt_variables_body(variables: list[dict], ctx: ResolveContext) -> list[dict]:
+    return [
+        (
+            {**v, "default_value": ctx.reveal(v["default_value"])}
+            if v.get("is_sensitive")
+            else v
+        )
+        for v in variables
+    ]
+
+
 def _assistant_resolved(document: Document, ctx: ResolveContext) -> dict:
     spec = document.spec
     dumped = spec.model_dump(mode="python")
@@ -261,6 +272,7 @@ def _assistant_resolved(document: Document, ctx: ResolveContext) -> dict:
         "categories": ctx.ids(DocumentKind.CATEGORY, spec.categories),
         "toolkits": [_toolkit_body(t, ctx) for t in dumped["toolkits"]],
         "mcp_servers": [_mcp_body(s, ctx) for s in dumped["mcp_servers"]],
+        "prompt_variables": _prompt_variables_body(dumped["prompt_variables"], ctx),
     }
     # An omitted ``skill_ids`` is neither diffed nor sent, so skills attached
     # outside the document survive; an explicit empty list clears them.

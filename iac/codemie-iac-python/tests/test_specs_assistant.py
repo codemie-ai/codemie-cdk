@@ -20,6 +20,7 @@ from codemie_sdk.models.assistant import (
     Integration,
     MCPServerConfig,
     MCPServerDetails,
+    PromptVariable,
     ToolDetails,
     ToolKitDetails,
 )
@@ -333,3 +334,115 @@ def test_skill_ids_round_trip_through_from_entity():
         skill_ids=["s1"],
     )
     assert AssistantSpec.from_entity(request).skill_ids == ["s1"]
+
+
+def _assistant_kwargs(**extra):
+    return {
+        "name": "bot",
+        "description": "d",
+        "system_prompt": "p",
+        "project": "proj",
+        "llm_model_type": "gpt-4o",
+        **extra,
+    }
+
+
+def _sensitive_request(name, key, value):
+    return AssistantCreateRequest(
+        **_assistant_kwargs(
+            name=name,
+            prompt_variables=[
+                PromptVariable(
+                    key=key, default_value=value, is_sensitive=True, description="x"
+                )
+            ],
+        )
+    )
+
+
+def test_sensitive_variable_yields_same_ref_for_secret_and_mask():
+    real = AssistantSpec.from_entity(_sensitive_request("Bot", "api_key", "s3cret-val"))
+    masked = AssistantSpec.from_entity(_sensitive_request("Bot", "api_key", "********"))
+    assert real.prompt_variables[0].default_value == "env:BOT_PROMPT_API_KEY"
+    assert real.prompt_variables[0].is_sensitive is True
+    assert real.model_dump() == masked.model_dump()
+    assert "s3cret-val" not in str(real.model_dump())
+    assert "********" not in str(masked.model_dump())
+
+
+def test_sensitive_variable_refs_differ_per_assistant_and_key():
+    a = AssistantSpec.from_entity(_sensitive_request("Bot", "k1", "x"))
+    b = AssistantSpec.from_entity(_sensitive_request("Bot", "k2", "x"))
+    c = AssistantSpec.from_entity(_sensitive_request("Other", "k1", "x"))
+    refs = {s.prompt_variables[0].default_value for s in (a, b, c)}
+    assert len(refs) == 3
+
+
+def test_sensitive_variable_collision_raises_without_value():
+    AssistantSpec.from_entity(_sensitive_request("my-bot", "k", "s3cret-val"))
+    with pytest.raises(ValueError) as exc:
+        AssistantSpec.from_entity(_sensitive_request("my_bot", "k", "other-secret"))
+    assert "other-secret" not in str(exc.value)
+
+
+def test_non_sensitive_variable_round_trips_without_flag():
+    request = AssistantCreateRequest(
+        **_assistant_kwargs(
+            prompt_variables=[PromptVariable(key="k", default_value="plain")]
+        )
+    )
+    spec = AssistantSpec.from_entity(request)
+    dumped = spec.model_dump()
+    assert dumped["prompt_variables"] == [
+        {"key": "k", "description": None, "default_value": "plain"}
+    ]
+    assert AssistantSpec.model_validate(dumped) == spec
+
+
+def test_sensitive_document_round_trips():
+    spec = AssistantSpec(
+        **_assistant_kwargs(
+            prompt_variables=[
+                {"key": "k", "default_value": "env:FOO_BAR", "is_sensitive": True}
+            ]
+        )
+    )
+    dumped = spec.model_dump()
+    assert dumped["prompt_variables"][0]["is_sensitive"] is True
+    assert AssistantSpec.model_validate(dumped) == spec
+
+
+@pytest.mark.parametrize("value", ["s3cret", ""])
+def test_sensitive_literal_is_rejected_without_echo(value):
+    with pytest.raises(ValidationError) as exc:
+        AssistantSpec(
+            **_assistant_kwargs(
+                prompt_variables=[
+                    {"key": "tok", "default_value": value, "is_sensitive": True}
+                ]
+            )
+        )
+    text = str(exc.value)
+    assert "bot" in text and "tok" in text and "must be an env: reference" in text
+    if value:
+        assert value not in text
+
+
+def test_sensitive_mask_is_rejected_with_reference_hint():
+    with pytest.raises(ValidationError, match="use an env: reference"):
+        AssistantSpec(
+            **_assistant_kwargs(
+                prompt_variables=[
+                    {"key": "tok", "default_value": "********", "is_sensitive": True}
+                ]
+            )
+        )
+
+
+def test_non_sensitive_variable_accepts_mask_text():
+    spec = AssistantSpec(
+        **_assistant_kwargs(
+            prompt_variables=[{"key": "k", "default_value": "********"}]
+        )
+    )
+    assert spec.prompt_variables[0].default_value == "********"
