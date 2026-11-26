@@ -44,19 +44,16 @@ blocks for that YAML instead, plus two safety rules baked in:
 
 ## What it can't do yet
 
-- No command-line tool. This is a library you import, not something you run
-  from a terminal (a CLI is planned for a later release).
 - `apply` never deletes anything, and bulk apply only creates. See "Plan and
   apply against the platform" and "Not supported" below.
 
 ## Install
 
-The IaC needs `codemie-sdk-python` 0.3.0 or newer (svn, SharePoint, Xray and
-provider datasource support).
+The IaC needs exactly `codemie-sdk-python` 0.1.713 (svn, SharePoint, Xray and
+provider datasource support), the version pinned in `pyproject.toml`.
 
 This package lives next to the Node IaC tool, under `iac/codemie-iac-python`.
-It depends on the local `codemie-sdk-python` package, so install both from
-this repo with Poetry:
+Poetry installs the pinned SDK from PyPI:
 
 ```bash
 cd iac/codemie-iac-python
@@ -422,10 +419,8 @@ are neither compared nor sent), while `skill_ids: []` detaches them all. The ins
 `codemie-sdk-python` must carry `skill_ids` on the assistant create, update
 and read models; if it does not, applying an assistant that sets `skill_ids`
 (even `skill_ids: []`) fails (`unsupported_sdk`) before anything is written,
-instead of silently dropping the skills. No `codemie-sdk-python` release up
-to 0.1.711 carries it, so assistant `skill_ids` works once a release that
-includes the change is installed and the pin in `pyproject.toml` is raised to
-it.
+instead of silently dropping the skills. The pinned `codemie-sdk-python`
+0.1.713 carries it, so assistant `skill_ids` works with the pinned version.
 
 **Resolving skill and datasource references.** An assistant's `skill_ids` and
 a workflow agent's `skill_ids` and `datasource_ids` are written as names. Each
@@ -679,6 +674,7 @@ src/codemie_iac/
 ## CLI
 
 ```
+codemie-iac [-c/--config codemie.yaml] init [--force]
 codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] plan <file> --id <id> [--json]
 codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] apply <path> [--id <id>] [--json]
 ```
@@ -686,9 +682,91 @@ codemie-iac [--project NAME] [-c/--config codemie.yaml] [--env-file PATH] apply 
 Global flags `--project`, `-c/--config` and `--env-file` go BEFORE the
 subcommand; `--json` goes after it.
 
+**`init`** writes a `codemie.yaml` template to the `-c/--config` path (default
+`./codemie.yaml`) and needs no login. If the file already exists the command
+fails (exit 4) and leaves it untouched; `--force` replaces it. Every value in
+the template is `${NAME:-}`, so fill the variables from the shell or `.env`, or
+rename them.
+
 The `project` of a document (`project_name` for integrations and datasources)
 is optional and defaults to the target project. A different explicit value is
 refused with `project_mismatch`.
+
+### `codemie.yaml`
+
+`plan` and `apply` read all connection settings from `./codemie.yaml` (or the
+`-c` path); a missing file is a config error (exit 4). Unknown keys are ignored
+with one warning on stderr naming the key path (never the value). The
+`version`, `imported`, `tool_definitions`, `datasource_defaults` and
+`resources` keys of the Node.js tool and `project.description` are accepted
+and not inspected. `$import` (a modular Node.js config) is not supported: write
+the `project` and `environment` keys inline.
+
+| Key | Required | Meaning |
+|---|---|---|
+| `project.name` | yes, unless `--project` is given | target project |
+| `environment.codemie_api_url` | yes | platform API URL |
+| `environment.username`, `environment.password` | local login; remote password grant | username and password |
+| `environment.auth_server_url`, `environment.auth_realm_name` | remote login | Keycloak URL and realm |
+| `environment.client_id` | remote login | Keycloak client; with `client_secret` it is the production path, with `username` + `password` a password grant |
+| `environment.client_secret` | remote client credentials | client secret |
+| `environment.verify_ssl` | no | `true` (default) or `false`; empty means `true`; `false` prints a warning |
+
+An empty value counts as missing. String values may reference variables:
+`${NAME}` or `${NAME:-default}`. An unset or empty `${NAME}` without a default
+is a config error (exit 4) naming the variable; write `${NAME:-}` where an
+empty value is fine. This applies to the whole file, including sections the CLI
+does not validate. A `$` not followed by `{` is left as is. Values come from
+the real environment and from `.env`, which only fills in unset names.
+
+```yaml
+project:
+  name: ${CODEMIE_PROJECT:-}
+environment:
+  codemie_api_url: ${CODEMIE_API_URL:-}
+  username: ${CODEMIE_USERNAME:-}
+  password: ${CODEMIE_PASSWORD:-}
+```
+
+**Local login.** A `codemie_api_url` containing `localhost`, `127.0.0.1`,
+`0.0.0.0` or `192.168` (case-insensitive, anywhere in the URL, so
+`https://localhost.example.com` counts too; the same rule as the SDK) logs in
+with `username` and `password`. Both are required; no Keycloak settings are
+needed.
+
+**Remote login (Keycloak).** Any other URL needs `auth_server_url`,
+`auth_realm_name` and `client_id`, plus one of:
+
+- `client_secret`: client credentials, the production path. Use one service
+  account per environment and keep its secret in a masked CI variable,
+  referenced by name (for example `client_secret: ${CODEMIE_CLIENT_SECRET}`).
+- `username` + `password`: a password grant for the named `client_id`.
+
+Setting `client_secret` together with `username` or `password` is a config
+error: the SDK would log in as the user, the service account is a different
+identity, so the CLI does not pick one for you. `username` and `password` without `client_id` are not
+enough for a remote URL. Incomplete settings stop the CLI before it contacts
+the platform, and the error names the missing `environment.*` keys.
+
+**Breaking change.** JWT mode (`environment.jwt_token`, `CODEMIE_JWT_TOKEN`),
+the legacy `api:` section and the fixed-name `CODEMIE_*` variables
+(`CODEMIE_API_URL`, `CODEMIE_PROJECT`, `CODEMIE_VERIFY_SSL` and the rest) are
+no longer read. `jwt_token` and `api:` are now unknown keys (a warning); to keep
+using a variable, reference it from `codemie.yaml` as `${NAME}`. A configuration
+error raised while a command runs now exits 4 (it used to exit 2). A Node.js
+`codemie.yaml` that pulls `environment` in with `$import` no longer works; put
+the keys inline.
+
+**Trusted input.** `codemie.yaml` in the working directory decides which API
+URL receives the credentials expanded from your shell. Treat it like a
+Makefile: do not run the CLI in a repository you do not trust.
+
+The SDK comparison test (`tests/cli/test_sdk_local_rule.py`) checks the local
+URL rule and the login behaviour against the pinned SDK; rerun it on every
+change of the pin.
+
+Creating assistant categories needs administrator rights on the platform; this
+has not been verified against the backend yet.
 
 `.env`: if `./.env` exists in the current directory it is read (a missing one is
 ignored); `--env-file PATH` reads that file instead (missing or unreadable is a
@@ -703,32 +781,6 @@ in `plan` and `apply` (so a secret like `JIRA_PROD_API_TOKEN` can live in `.env`
 
 Exit codes: 0 success / nothing to do, 1 changes pending, 2 apply failed,
 3 unresolved input, 4 config error, 5 invalid document.
-
-Environment variables: `CODEMIE_API_URL`, `CODEMIE_AUTH_URL`, `CODEMIE_REALM`,
-`CODEMIE_CLIENT_ID`, `CODEMIE_CLIENT_SECRET`, `CODEMIE_USERNAME`,
-`CODEMIE_PASSWORD`, `CODEMIE_JWT_TOKEN`, `CODEMIE_PROJECT`,
-`CODEMIE_VERIFY_SSL` (default `true`; `false` disables TLS verification).
-
-`codemie.yaml` keys: `project.name`; an `environment:` mapping with
-`codemie_api_url`, `auth_server_url`, `auth_realm_name`, `client_id`,
-`client_secret`, `username`, `password`, `jwt_token`; and the legacy `api:`
-mapping (`url`, `auth_url`, `realm`) as a fallback. Precedence per key: flag >
-environment variable (real environment, then `.env`) > `environment:` > `api:`.
-
-String values may reference environment variables: `${NAME}` or
-`${NAME:-default}`. An unset or empty `${NAME}` without a default is a config
-error (exit 4) naming the variable; write `${NAME:-}` where an empty value is
-fine. A `$` not followed by `{` is left as is.
-
-```yaml
-environment:
-  codemie_api_url: ${CODEMIE_API_URL:-}
-  jwt_token: ${CODEMIE_JWT_TOKEN:-}
-```
-
-With a JWT (`CODEMIE_JWT_TOKEN` / `jwt_token`) the token is sent as a static
-bearer token and only the API URL is required. Without one, the API URL, auth
-URL and realm are required, plus client credentials or username/password.
 
 ### Examples
 

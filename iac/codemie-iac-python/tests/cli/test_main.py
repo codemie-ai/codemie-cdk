@@ -26,6 +26,7 @@ from codemie_iac.cli.target_config import ConfigError
 class _Target:
     project = "demo"
     environment = {"X": "1"}
+    warnings = ("codemie.yaml: unknown key api is ignored",)
 
     def build_client(self):
         return "client"
@@ -107,3 +108,44 @@ def test_usage_errors_exit_4_before_the_client_is_built(monkeypatch, argv, capsy
     monkeypatch.setattr(main_module.TargetConfig, "resolve", _resolve)
     assert main(argv) == ExitStatus.CONFIG_ERROR
     assert "ConfigError" in capsys.readouterr().out
+
+
+def test_warnings_go_to_stderr_once_and_json_stdout_parses(target, monkeypatch, capsys):
+    def fake(file, entity_id, out, **kwargs):
+        out.write('{"ok": true}\n')
+        return ExitStatus.SUCCESS
+
+    monkeypatch.setattr(main_module, "plan_command", fake)
+    assert main(["plan", "f.yaml", "--id", "x", "--json"]) == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {"ok": True}
+    assert captured.err.count("unknown key api") == 1
+
+
+def test_warnings_are_printed_when_resolve_fails(monkeypatch, capsys):
+    def fail(*args, **kwargs):
+        raise ConfigError("Missing environment.codemie_api_url", ("warn-one",))
+
+    monkeypatch.setattr(main_module.TargetConfig, "resolve", fail)
+    assert main(["plan", "f.yaml", "--id", "x", "--json"]) == 4
+    captured = capsys.readouterr()
+    assert captured.err == "warning: warn-one\n"
+    assert json.loads(captured.out)["exit_code"] == 4
+
+
+def test_command_without_target_skips_resolve(monkeypatch):
+    def resolve(*args, **kwargs):
+        raise AssertionError("resolve must not run")
+
+    seen = {}
+
+    def run(args, **context):
+        seen.update(context)
+        return ExitStatus.SUCCESS
+
+    monkeypatch.setattr(main_module.TargetConfig, "resolve", resolve)
+    monkeypatch.setitem(
+        main_module._COMMANDS, "plan", ("h", main_module._add_plan, run, False)
+    )
+    assert main(["plan", "f.yaml", "--id", "x"]) == 0
+    assert "client" not in seen
