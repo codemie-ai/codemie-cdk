@@ -14,7 +14,7 @@ A release starts when a GitHub Release is published. The workflow builds, checks
 | Package | Registry | Tag prefix | Directory | Manifest | Workflow |
 |---------|----------|------------|-----------|----------|----------|
 | `codemie-cdk-python` | PyPI | `cdk-python-v` | `iac/codemie-iac-python` | `pyproject.toml` | `publish-python.yml` |
-| `@codemieai/cdk` | npm | `cdk-v` | `iac/codemie-iac-nodejs` | `package.json` | `publish.yml` |
+| `@codemieai/cdk` | npm | `cdk-v` | `iac/codemie-iac-nodejs` | `package.json` | `publish-node.yml` |
 
 ## 1. Pre-flight
 
@@ -101,7 +101,7 @@ Do not save a draft: a draft does not start the workflow. Skip this step if `gh 
 ## 6. After the release
 
 ```bash
-gh run list --workflow publish-python.yml (Python) or publish.yml (Node.js) --limit 3
+gh run list --workflow publish-python.yml (Python) or publish-node.yml (Node.js) --limit 3
 gh run watch            # pick the run of the new tag
 ```
 

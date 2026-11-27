@@ -14,7 +14,7 @@
 
 import pytest
 from pydantic import ValidationError
-from codemie_iac.credentials import CredentialRef
+from codemie_iac.credentials import CredentialRef, is_mask
 
 
 def test_from_entity_is_deterministic():
@@ -38,3 +38,19 @@ def test_from_entity_signature_has_no_value_parameter():
 
     params = inspect.signature(CredentialRef.from_entity).parameters
     assert list(params) == ["identifier", "credential_key"]
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("*" * 8, True),
+        ("*" * 10, True),
+        ("*" * 7, False),
+        ("*" * 11, False),
+        ("****a***", False),
+        (None, False),
+        (8, False),
+    ],
+)
+def test_is_mask(value, expected):
+    assert is_mask(value) is expected

@@ -10,32 +10,41 @@ permissions:
   contents: read
 
 jobs:
-  install:
-    name: Fresh install
+  python:
+    name: Python CDK
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: iac/codemie-iac-nodejs
+        working-directory: iac/codemie-iac-python
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '22'
+      - name: Install Poetry
+        run: pipx install poetry
 
-      # The package has no committed lock file; dependencies are always resolved fresh.
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: poetry install --no-interaction
 
       - name: Report installed codemie-sdk version
-        run: echo "codemie-sdk $(node -p "require('./node_modules/codemie-sdk/package.json').version")" >> "$GITHUB_STEP_SUMMARY"
+        run: echo "codemie-sdk-python $(poetry run python -c "import importlib.metadata as m; print(m.version('codemie-sdk-python'))")" >> "$GITHUB_STEP_SUMMARY"
 
-  lint:
-    name: Lint
+      - name: Lint
+        run: poetry run ruff check .
+
+      - name: Format check
+        run: poetry run ruff format --check .
+
+      - name: Unit tests
+        run: poetry run pytest tests/
+
+      - name: Build package
+        run: poetry build
+
+  node:
+    name: Node.js CDK
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -67,89 +76,11 @@ jobs:
       - name: Biome format check
         run: npx biome format ./src
 
-  test:
-    name: Unit tests
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: iac/codemie-iac-nodejs
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '22'
-
-      # The package has no committed lock file; dependencies are always resolved fresh.
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-
-      - name: Report installed codemie-sdk version
-        run: echo "codemie-sdk $(node -p "require('./node_modules/codemie-sdk/package.json').version")" >> "$GITHUB_STEP_SUMMARY"
-
       - name: Unit tests
         run: npm test
 
-  build:
-    name: Build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: iac/codemie-iac-nodejs
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '22'
-
-      # The package has no committed lock file; dependencies are always resolved fresh.
-      - name: Install dependencies
-        run: npm install --no-audit --no-fund
-
-      - name: Report installed codemie-sdk version
-        run: echo "codemie-sdk $(node -p "require('./node_modules/codemie-sdk/package.json').version")" >> "$GITHUB_STEP_SUMMARY"
-
       - name: Build
         run: npm run build
-
-  python:
-    name: Python IaC
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: iac/codemie-iac-python
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Install Poetry
-        run: pipx install poetry
-
-      - name: Install dependencies
-        run: poetry install --no-interaction
-
-      - name: Lint
-        run: poetry run ruff check .
-
-      - name: Format check
-        run: poetry run ruff format --check .
-
-      - name: Unit tests
-        run: poetry run pytest tests/
-
-      - name: Build package
-        run: poetry build
 
   internal-refs:
     name: Internal references

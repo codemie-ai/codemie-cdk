@@ -53,18 +53,18 @@ No credentials, private hostnames, ticket keys or personal e-mail addresses in t
 | Control | Where |
 |---|---|
 | Third-party actions are pinned by commit SHA | `.github/workflows/ci.yml` |
-| Workflows use `contents: read` by default | `.github/workflows/ci.yml` (line 9), `.github/workflows/publish.yml` (line 22) |
+| Workflows use `contents: read` by default | `.github/workflows/ci.yml` (line 9), `.github/workflows/publish-node.yml` (line 22), `.github/workflows/publish-python.yml` (line 22) |
 | Checkout uses `persist-credentials: false` | `.github/workflows/ci.yml` |
-| npm publish uses OIDC with no stored token. Only the `publish` job has `id-token: write` | `.github/workflows/publish.yml` (lines 145-148), `docs/RELEASING.md` |
+| npm and PyPI publish use OIDC with no stored token. Only the `publish` job has `id-token: write` | `.github/workflows/publish-node.yml` (lines 145-148), `.github/workflows/publish-python.yml` (lines 148-151), `docs/RELEASING.md` |
 | The `verify` job has no secrets | `docs/RELEASING.md` ("Checks before anything is published") |
-| A real publish needs a Release on `main`, or a manual run from `main` with `dry_run` off and the word `publish` | `.github/workflows/publish.yml` (lines 51-79) |
+| A real publish needs a Release on `main`, or a manual run from `main` with `dry_run` off and the word `publish` | `.github/workflows/publish-node.yml` (lines 51-79), `.github/workflows/publish-python.yml` (lines 51-79) |
 | CodeQL runs on three languages | `.github/workflows/codeql.yml` |
 
 Known exposures:
 
 - The Node.js package has no lockfile.
-- Reusable workflows reference `codemie-ai/ci-workflows` at `@main` (`.github/workflows/ci.yml`, `.github/workflows/publish.yml`).
-- `publish.yml` downloads `check_version.py` from `ci-workflows@main` at run time, unpinned (lines 81-84).
+- Reusable workflows reference `codemie-ai/ci-workflows` at `@main` (`.github/workflows/ci.yml`, `.github/workflows/publish-node.yml`).
+- `publish-node.yml` and `publish-python.yml` download `check_version.py` from `ci-workflows@main` at run time, unpinned (`publish-node.yml` lines 81-84, `publish-python.yml` line 84).
 
 Do not add new unpinned references. Release steps: `docs/RELEASING.md`.
 
